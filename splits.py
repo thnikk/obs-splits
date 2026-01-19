@@ -57,6 +57,7 @@ corner_radius = 10
 font_scale = 1.0
 line_spacing = 30
 show_ms = True
+show_best_segment_time = False
 use_dynamic_height = True
 height_setting = 600
 svg_width = 400
@@ -429,7 +430,7 @@ def reset_timer():
 
 
 def generate_svg():
-    global bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
+    global bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms, show_best_segment_time
     global current_split_index, start_time, timer_running, split_times, segment_history, game_image_path
     global use_dynamic_height, height_setting, svg_width, normal_font, mono_font
     global comparison_pb_segments, comparison_best_segments, comparison_pb_total, debug_status
@@ -529,7 +530,6 @@ def generate_svg():
 
         if i < len(split_times):
             actual_seg = split_times[i] - prev_total
-            time_str = format_time(actual_seg, decimal_places=seg_decimals)
             
             # Use snapshots for comparison if available
             if timer_running or current_split_index >= 0:
@@ -539,36 +539,72 @@ def generate_svg():
                 comp_best = get_best_segment(i)
                 comp_pb = None # Not used for delta when not running
 
+            if show_best_segment_time:
+                if comp_best is not None:
+                    best_times = [get_best_segment(j) for j in range(i + 1)]
+                    best_times = [t for t in best_times if t is not None]
+                    cumulative_best = sum(best_times) if best_times else 0
+                    time_str = format_time(cumulative_best, decimal_places=seg_decimals)
+                    segment_time_color = text_color
+            else:
+                time_str = format_time(actual_seg, decimal_places=seg_decimals)
+
             if comp_best is not None:
                 # Delta vs PB or Best? Standard is vs PB, but let's stick to what was there or improve.
                 # Currently delta_str was using min(all_times_for_segment) which is Gold.
                 delta = actual_seg - comp_best
                 delta_str = format_time(
                     delta, show_plus=True, decimal_places=1, delta_format=True)
-                
-                # Colors: 
+
+                # Colors:
                 # Gold: actual_seg <= comp_best
                 # Green: actual_seg < comp_pb (if comp_pb exists)
                 # Red: actual_seg > comp_pb (or > comp_best if no PB)
-                
-                if actual_seg <= comp_best + 0.001:
-                    segment_time_color = gold_color
-                    delta_time_color = gold_color
-                elif comp_pb is not None:
-                    if actual_seg < comp_pb:
-                        segment_time_color = green_color
-                        delta_time_color = green_color
+
+                if not show_best_segment_time:
+                    if actual_seg <= comp_best + 0.001:
+                        segment_time_color = gold_color
+                        delta_time_color = gold_color
+                    elif comp_pb is not None:
+                        if actual_seg < comp_pb:
+                            segment_time_color = green_color
+                            delta_time_color = green_color
+                        else:
+                            segment_time_color = red_color
+                            delta_time_color = red_color
                     else:
-                        segment_time_color = red_color
-                        delta_time_color = red_color
+                        # Fallback if no PB data
+                        delta_time_color = green_color if delta < 0 else red_color
+                        segment_time_color = green_color if delta < 0 else red_color
                 else:
-                    # Fallback if no PB data
-                    delta_time_color = green_color if delta < 0 else red_color
-                    segment_time_color = green_color if delta < 0 else red_color
+                    # Delta colors still apply when showing best times
+                    if actual_seg <= comp_best + 0.001:
+                        delta_time_color = gold_color
+                    elif comp_pb is not None:
+                        delta_time_color = green_color if actual_seg < comp_pb else red_color
+                    else:
+                        delta_time_color = green_color if delta < 0 else red_color
         elif i == current_split_index:
-            segment_time_color = timer_display_color
-            time_str = format_time(
-                current_total_elapsed - prev_total, decimal_places=seg_decimals)
+            best_seg = get_best_segment(i)
+            if show_best_segment_time and best_seg:
+                best_times = [get_best_segment(j) for j in range(i + 1)]
+                best_times = [t for t in best_times if t is not None]
+                cumulative_best = sum(best_times) if best_times else 0
+                time_str = format_time(cumulative_best, decimal_places=seg_decimals)
+                segment_time_color = text_color
+            else:
+                segment_time_color = timer_display_color
+                time_str = format_time(
+                    current_total_elapsed - prev_total, decimal_places=seg_decimals)
+        else:
+            if show_best_segment_time:
+                best_seg = get_best_segment(i)
+                if best_seg:
+                    best_times = [get_best_segment(j) for j in range(i + 1)]
+                    best_times = [t for t in best_times if t is not None]
+                    cumulative_best = sum(best_times) if best_times else 0
+                    time_str = format_time(cumulative_best, decimal_places=seg_decimals)
+                    segment_time_color = text_color
 
         svg.append(
             f'<text x="15" y="{y_offset}" fill="{text_color}" font-family="{normal_font}" font-size="{16 * font_scale}">{name}</text>')
@@ -614,6 +650,7 @@ def update_source():
 def script_defaults(settings):
     obs.obs_data_set_default_int(settings, "input_code", 167)
     obs.obs_data_set_default_bool(settings, "show_ms", True)
+    obs.obs_data_set_default_bool(settings, "show_best_segment_time", False)
     obs.obs_data_set_default_bool(settings, "use_dynamic_height", True)
     obs.obs_data_set_default_int(settings, "height_setting", 600)
     obs.obs_data_set_default_int(settings, "bg_opacity", 100)
@@ -665,6 +702,8 @@ def script_properties():
         props, "line_spacing", "Line Spacing (px)", 10, 100, 1)
     obs.obs_properties_add_bool(
         props, "show_ms", "Show Milliseconds in Segments")
+    obs.obs_properties_add_bool(
+        props, "show_best_segment_time", "Show Best Segment Times Instead")
 
     obs.obs_properties_add_bool(
         props, "use_dynamic_height", "Fit Height to Categories")
@@ -699,7 +738,7 @@ def script_properties():
 
 def script_update(settings):
     global source_name, splits_file_path, input_thread, running
-    global game_name, category_name, bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
+    global game_name, category_name, bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms, show_best_segment_time
     global use_dynamic_height, height_setting, normal_font, mono_font, device_blacklist, device_filter, input_code
     global text_color, highlight_color, gold_color, green_color, red_color, active_segment_bg, separator_color
 
@@ -708,6 +747,7 @@ def script_update(settings):
     game_name = obs.obs_data_get_string(settings, "game_select")
     category_name = obs.obs_data_get_string(settings, "category_select")
     show_ms = obs.obs_data_get_bool(settings, "show_ms")
+    show_best_segment_time = obs.obs_data_get_bool(settings, "show_best_segment_time")
     device_blacklist = obs.obs_data_get_string(settings, "device_blacklist")
     device_filter = obs.obs_data_get_string(settings, "device_filter")
     input_code = obs.obs_data_get_int(settings, "input_code")
