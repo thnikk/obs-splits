@@ -35,6 +35,9 @@ show_ms = True
 use_dynamic_height = True
 height_setting = 600
 svg_width = 400
+# User-defined fonts
+normal_font = "Nunito, sans-serif"
+mono_font = "Courier New, Courier, monospace"
 
 # Timer State
 current_split_index = -1
@@ -244,7 +247,7 @@ def reset_timer():
 def generate_svg():
     global bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
     global current_split_index, start_time, timer_running, split_times, segment_history, game_image_path
-    global use_dynamic_height, height_setting, svg_width
+    global use_dynamic_height, height_setting, svg_width, normal_font, mono_font
 
     hex_color = bg_color.lstrip('#')
     rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
@@ -255,9 +258,6 @@ def generate_svg():
     gold_color = "#ffda44"
     green_color = "#44ff44"
     red_color = "#ff4444"
-    font_family = "'Nunito', sans-serif"
-    # Monospace font for time values to ensure alignment
-    mono_font = "'Courier New', Courier, monospace"
 
     now = time.time()
     current_total_elapsed = (
@@ -292,8 +292,8 @@ def generate_svg():
         text_x_start = 30 + img_size
 
     svg.extend([
-        f'<text x="{text_x_start}" y="{content_start_y + 40}" fill="{highlight_color}" font-family="{font_family}" font-size="{20 * font_scale}" font-weight="bold">{game_name}</text>',
-        f'<text x="{text_x_start}" y="{content_start_y + 65}" fill="{text_color}" font-family="{font_family}" font-size="{14 * font_scale}">{category_name}</text>',
+        f'<text x="{text_x_start}" y="{content_start_y + 40}" fill="{highlight_color}" font-family="{normal_font}" font-size="{20 * font_scale}" font-weight="bold">{game_name}</text>',
+        f'<text x="{text_x_start}" y="{content_start_y + 65}" fill="{text_color}" font-family="{normal_font}" font-size="{14 * font_scale}">{category_name}</text>',
         f'<line x1="20" y1="{content_start_y + 80}" x2="380" y2="{content_start_y + 80}" stroke="#444" stroke-width="1"/>'
     ])
 
@@ -316,8 +316,7 @@ def generate_svg():
         if history_list:
             sob_total += min(history_list)
 
-    # Calculate PB/Delta for final time color
-    # We compare current_total_elapsed against the sum of best segments as the PB reference
+    # Calculate PB color logic
     final_timer_color = text_color
     if sob_total > 0:
         final_timer_color = green_color if current_total_elapsed < sob_total else red_color
@@ -354,7 +353,7 @@ def generate_svg():
                 current_total_elapsed - prev_total, decimal_places=seg_decimals)
 
         svg.append(
-            f'<text x="20" y="{y_offset}" fill="{text_color}" font-family="{font_family}" font-size="{16 * font_scale}">{name}</text>')
+            f'<text x="20" y="{y_offset}" fill="{text_color}" font-family="{normal_font}" font-size="{16 * font_scale}">{name}</text>')
         if delta_str:
             svg.append(
                 f'<text x="310" y="{y_offset}" fill="{delta_time_color}" font-family="{mono_font}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
@@ -366,11 +365,9 @@ def generate_svg():
     sob_str = format_time(sob_total) if sob_total > 0 else "--:--"
 
     footer_y = content_start_y + render_height
-    # PB and SoB labels use mono font for values
-    svg.append(f'<text x="20" y="{footer_y - 45}" fill="{text_color}" font-family="{font_family}" font-size="{12 * font_scale}" opacity="0.7">PB: <tspan font-family="{mono_font}">{pb_str}</tspan></text>')
-    svg.append(f'<text x="20" y="{footer_y - 25}" fill="{text_color}" font-family="{font_family}" font-size="{12 * font_scale}" opacity="0.7">Sum of Best: <tspan font-family="{mono_font}">{sob_str}</tspan></text>')
+    svg.append(f'<text x="20" y="{footer_y - 45}" fill="{text_color}" font-family="{normal_font}" font-size="{12 * font_scale}" opacity="0.7">PB: <tspan font-family="{mono_font}">{pb_str}</tspan></text>')
+    svg.append(f'<text x="20" y="{footer_y - 25}" fill="{text_color}" font-family="{normal_font}" font-size="{12 * font_scale}" opacity="0.7">SoB: <tspan font-family="{mono_font}">{sob_str}</tspan></text>')
     
-    # Large timer uses mono font and final_timer_color (relative to PB)
     svg.append(f'<text x="380" y="{footer_y - 30}" fill="{final_timer_color}" font-family="{mono_font}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed)}</text>')
     
     svg.append('</svg>')
@@ -396,7 +393,7 @@ def update_source():
 
 
 def script_description():
-    return "SVG Speedrun Splits Display.\nPress KEY_RECORD to split, hold to reset.\nRequires 'evdev' and 'Nunito' font."
+    return "SVG Speedrun Splits Display.\nPress KEY_RECORD to split, hold to reset.\nRequires 'evdev' and installed fonts."
 
 
 def script_properties():
@@ -413,6 +410,11 @@ def script_properties():
     obs.obs_properties_add_int(props, "bg_opacity", "Opacity (%)", 0, 100, 1)
     obs.obs_properties_add_int(
         props, "corner_radius", "Corner Radius", 0, 100, 1)
+    
+    # Font settings
+    obs.obs_properties_add_text(props, "normal_font", "Normal Font Family", obs.OBS_TEXT_DEFAULT)
+    obs.obs_properties_add_text(props, "mono_font", "Monospace Font Family", obs.OBS_TEXT_DEFAULT)
+    
     obs.obs_properties_add_float(
         props, "font_scale", "Font Scale", 0.1, 5.0, 0.1)
     obs.obs_properties_add_int(
@@ -449,13 +451,17 @@ def script_properties():
 def script_update(settings):
     global source_name, splits_file_path, input_thread, running
     global game_name, category_name, bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
-    global use_dynamic_height, height_setting
+    global use_dynamic_height, height_setting, normal_font, mono_font
 
     source_name = obs.obs_data_get_string(settings, "source")
     splits_file_path = obs.obs_data_get_string(settings, "splits_file")
     game_name = obs.obs_data_get_string(settings, "game_select")
     category_name = obs.obs_data_get_string(settings, "category_select")
     show_ms = obs.obs_data_get_bool(settings, "show_ms")
+
+    # Update font families from settings
+    normal_font = obs.obs_data_get_string(settings, "normal_font") or "Nunito, sans-serif"
+    mono_font = obs.obs_data_get_string(settings, "mono_font") or "Courier New, Courier, monospace"
 
     use_dynamic_height = obs.obs_data_get_bool(settings, "use_dynamic_height")
     height_setting = obs.obs_data_get_int(settings, "height_setting")
