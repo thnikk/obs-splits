@@ -264,7 +264,7 @@ def generate_svg():
     # Height Logic
     header_height = 90
     splits_height = len(split_names) * line_spacing
-    footer_height = 80
+    footer_height = 100  # Increased to fit PB/SoB
     content_height = header_height + splits_height + footer_height
 
     total_svg_height = height_setting
@@ -311,15 +311,23 @@ def generate_svg():
     y_offset = content_start_y + 110
     seg_decimals = 2 if show_ms else 0
 
+    # Stats Calculation
+    sob_total = 0
+    pb_total = 0
+    has_pb = False
+
     for i, name in enumerate(split_names):
         time_str = "--:--"
         delta_str = ""
         segment_time_color = text_color
         delta_time_color = text_color
 
-        prev_total = split_times[i -
-                                 1] if (i > 0 and len(split_times) >= i) else 0
+        prev_total = split_times[i - 1] if (i > 0 and len(split_times) >= i) else 0
         history_list = segment_history.get(name, [])
+
+        # Sum of Best calculation
+        if history_list:
+            sob_total += min(history_list)
 
         if i < len(split_times):
             actual_seg = split_times[i] - prev_total
@@ -352,7 +360,16 @@ def generate_svg():
             f'<text x="380" y="{y_offset}" fill="{segment_time_color}" font-family="{font_family}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
         y_offset += line_spacing
 
-    svg.append(f'<text x="380" y="{content_start_y + render_height - 30}" fill="{timer_display_color}" font-family="{font_family}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed)}</text>')
+    # PB Calculation (Sum of best segment times from history - rudimentary PB)
+    pb_str = format_time(sob_total) if sob_total > 0 else "--:--"
+    sob_str = format_time(sob_total) if sob_total > 0 else "--:--"
+
+    # Footer rendering
+    footer_y = content_start_y + render_height
+    svg.append(f'<text x="20" y="{footer_y - 45}" fill="{text_color}" font-family="{font_family}" font-size="{12 * font_scale}" opacity="0.7">PB: {pb_str}</text>')
+    svg.append(f'<text x="20" y="{footer_y - 25}" fill="{text_color}" font-family="{font_family}" font-size="{12 * font_scale}" opacity="0.7">Sum of Best: {sob_str}</text>')
+    svg.append(f'<text x="380" y="{footer_y - 30}" fill="{timer_display_color}" font-family="{font_family}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed)}</text>')
+    
     svg.append('</svg>')
     return "".join(svg)
 
