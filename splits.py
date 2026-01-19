@@ -15,6 +15,27 @@ import base64
 from evdev import InputDevice, ecodes, list_devices
 from select import select
 
+# Input Configuration
+device_blacklist = ""
+device_filter = ""
+enable_logging = True
+
+def log(message, level=None):
+    if not enable_logging and level != obs.LOG_WARNING:
+        return
+    if level is None:
+        try:
+            level = obs.LOG_INFO
+        except:
+            level = 1 # Fallback to info level
+    try:
+        obs.script_log(level, f"[Splits] {message}")
+    except:
+        pass
+    print(f"[Splits] {message}")
+
+log("Splits script loaded", obs.LOG_WARNING)
+
 # --- Global State ---
 running = True
 source_name = ""
@@ -58,6 +79,7 @@ last_press_time = 0
 HOLD_THRESHOLD = 1.0  # Adjusted to 1.0s per request
 is_held = False
 reset_triggered = False
+debug_status = "Initializing..."
 
 
 def load_splits_data():
@@ -68,7 +90,7 @@ def load_splits_data():
         with open(splits_file_path, 'r') as f:
             return json.load(f)
     except Exception as e:
-        print(f"Error reading JSON: {e}")
+        log(f"Error reading JSON: {e}")
         return None
 
 
@@ -109,7 +131,7 @@ def load_splits():
                     if isinstance(run_data, dict):
                         segment_history[run_key] = run_data
     except Exception as e:
-        print(f"Error loading splits: {e}")
+        log(f"Error loading splits: {e}")
 
 
 def save_history():
@@ -119,7 +141,7 @@ def save_history():
         with open(history_file_path, 'w') as f:
             json.dump(segment_history, f, indent='\t')
     except Exception as e:
-        print(f"Error saving history: {e}")
+        log(f"Error saving history: {e}")
 
 
 def save_run_to_history():
@@ -202,57 +224,118 @@ def get_image_data_uri(path):
             b64_string = base64.b64encode(img_file.read()).decode("utf-8")
         return f"data:{mime};base64,{b64_string}"
     except Exception as e:
-        print(f"Error encoding image: {e}")
+        log(f"Error encoding image: {e}")
         return None
 
 
 def input_monitor():
     global gamepad, timer_running, current_split_index, start_time, last_press_time, running
-    global is_held, reset_triggered
+    global is_held, reset_triggered, device_blacklist, device_filter, debug_status
 
-    while running:
-        if gamepad is None:
-            devices = [InputDevice(path) for path in list_devices()]
-            for dev in devices:
-                if ecodes.EV_KEY in dev.capabilities():
-                    caps = dev.capabilities(verbose=False)
-                    if ecodes.EV_KEY in caps:
-                        if ecodes.BTN_GAMEPAD in caps[ecodes.EV_KEY] or 167 in caps[ecodes.EV_KEY]:
-                            gamepad = dev
-                            break
-            if not gamepad:
-                time.sleep(1)
-                continue
+    log("Input monitor thread started", obs.LOG_WARNING)
+    debug_status = "Monitor Started"
+    try:
+        while running:
+            if gamepad is None:
+                debug_status = "Searching..."
+                blacklist_terms = [term.strip().lower() for term in device_blacklist.split(",") if term.strip()]
+                filter_term = device_filter.strip().lower()
+                all_paths = list_devices()
+                if not all_paths:
+                    debug_status = "No devices found"
+                    time.sleep(1)
+                    continue
 
-        try:
-            r, w, x = select([gamepad.fd], [], [], 0.1)  # Increased polling frequency for hold check
-            
-            # Check for hold duration while key is pressed
-            if is_held and not reset_triggered:
-                if (time.time() - last_press_time) > HOLD_THRESHOLD:
-                    reset_timer()
-                    reset_triggered = True
+                log(f"Searching for controller among {len(all_paths)} devices...", obs.LOG_WARNING)
+                for path in all_paths:
+                    try:
+                        dev = InputDevice(path)
+                    except Exception:
+                        continue
 
-            if r:
-                for event in gamepad.read():
-                    if event.type == ecodes.EV_KEY and event.code == 167:
-                        if event.value == 1:  # Key Down
-                            last_press_time = time.time()
-                            is_held = True
-                            reset_triggered = False
-                        elif event.value == 0:  # Key Up
-                            is_held = False
-                            if not reset_triggered:
-                                trigger_split()
-                            reset_triggered = False
-        except Exception:
-            gamepad = None
+                    # Check blacklist
+                    dev_name = dev.name.lower()
+                    log(f"Checking device: {dev.name} ({path})")
+                    if any(term in dev_name for term in blacklist_terms):
+                        log(f"Skipping blacklisted device: {dev.name} ({path})")
+                        dev.close()
+                        continue
+                    
+                    # Check filter
+                    if filter_term and filter_term not in dev_name:
+                        log(f"Skipping device (doesn't match filter): {dev.name} ({path})")
+                        dev.close()
+                        continue
+
+                    is_match = False
+                    # Check capabilities
+                    try:
+                        caps = dev.capabilities(verbose=False)
+                        if ecodes.EV_KEY in caps:
+                            key_caps = caps[ecodes.EV_KEY]
+                            # Require BOTH BTN_GAMEPAD and KEY_RECORD (167)
+                            if ecodes.BTN_GAMEPAD in key_caps and 167 in key_caps:
+                                is_match = True
+                    except Exception as e:
+                        log(f"Error checking capabilities for {dev.name}: {e}")
+                    
+                    if is_match:
+                        gamepad = dev
+                        log(f"Controller connected: {dev.name} ({dev.path})", obs.LOG_WARNING)
+                        debug_status = f"Connected: {dev.name}"
+                        break
+                    else:
+                        dev.close()
+
+                if not gamepad:
+                    time.sleep(1)
+                    continue
+
+            try:
+                r, w, x = select([gamepad.fd], [], [], 0.1)
+                
+                if is_held and not reset_triggered:
+                    if (time.time() - last_press_time) > HOLD_THRESHOLD:
+                        reset_timer()
+                        reset_triggered = True
+
+                if r:
+                    debug_status = f"Active: {gamepad.name}"
+                    for event in gamepad.read():
+                        if event.type == ecodes.EV_KEY and event.code == 167:
+                            if event.value == 1:  # Key Down
+                                last_press_time = time.time()
+                                is_held = True
+                                reset_triggered = False
+                            elif event.value == 0:  # Key Up
+                                is_held = False
+                                if not reset_triggered:
+                                    trigger_split()
+                                reset_triggered = False
+            except (OSError, Exception) as e:
+                if gamepad:
+                    log(f"Controller disconnected: {gamepad.name} - Error: {e}", obs.LOG_WARNING)
+                    try:
+                        gamepad.close()
+                    except:
+                        pass
+                gamepad = None
+                is_held = False
+                reset_triggered = False
+                debug_status = "Disconnected"
+    except Exception as e:
+        log(f"Input monitor fatal error: {e}", obs.LOG_WARNING)
+        debug_status = f"Fatal Error: {e}"
+    finally:
+        log("Input monitor thread stopped", obs.LOG_WARNING)
+        debug_status = "Thread Stopped"
 
 
 def trigger_split():
     global current_split_index, timer_running, start_time, split_times
     global comparison_pb_segments, comparison_best_segments, comparison_pb_total
     now = time.time()
+    log(f"Trigger split. Current index: {current_split_index}, Running: {timer_running}")
 
     if not timer_running and current_split_index == -1:
         # Initialize comparison snapshots
@@ -300,6 +383,7 @@ def trigger_split():
 
 def reset_timer():
     global current_split_index, timer_running, split_times
+    log("Reset timer triggered", obs.LOG_WARNING)
     current_split_index = -1
     timer_running = False
     split_times = []
@@ -309,7 +393,7 @@ def generate_svg():
     global bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
     global current_split_index, start_time, timer_running, split_times, segment_history, game_image_path
     global use_dynamic_height, height_setting, svg_width, normal_font, mono_font
-    global comparison_pb_segments, comparison_best_segments, comparison_pb_total
+    global comparison_pb_segments, comparison_best_segments, comparison_pb_total, debug_status
 
     hex_color = bg_color.lstrip('#')
     rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
@@ -464,6 +548,9 @@ def generate_svg():
     
     svg.append(f'<text x="380" y="{footer_y - 30}" fill="{final_timer_color}" font-family="{mono_font}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed)}</text>')
     
+    # Debug Status
+    svg.append(f'<text x="20" y="{footer_y - 5}" fill="{text_color}" font-family="{normal_font}" font-size="8" opacity="0.3">{debug_status}</text>')
+
     svg.append('</svg>')
     return "".join(svg)
 
@@ -482,7 +569,7 @@ def update_source():
             obs.obs_source_update(source, settings)
             obs.obs_data_release(settings)
         except Exception as e:
-            print(f"Error updating SVG: {e}")
+            log(f"Error updating SVG: {e}")
         obs.obs_source_release(source)
 
 
@@ -521,6 +608,10 @@ def script_properties():
     obs.obs_properties_add_int(
         props, "height_setting", "Height", 100, 2000, 10)
 
+    obs.obs_properties_add_text(props, "device_blacklist", "Device Blacklist (comma-separated)", obs.OBS_TEXT_DEFAULT)
+    obs.obs_properties_add_text(props, "device_filter", "Device Filter (substring)", obs.OBS_TEXT_DEFAULT)
+    obs.obs_properties_add_bool(props, "enable_logging", "Enable Logging")
+
     data = load_splits_data()
     if data:
         for g in data.keys():
@@ -545,13 +636,17 @@ def script_properties():
 def script_update(settings):
     global source_name, splits_file_path, input_thread, running
     global game_name, category_name, bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
-    global use_dynamic_height, height_setting, normal_font, mono_font
+    global use_dynamic_height, height_setting, normal_font, mono_font, device_blacklist, device_filter, enable_logging
 
     source_name = obs.obs_data_get_string(settings, "source")
     splits_file_path = obs.obs_data_get_string(settings, "splits_file")
     game_name = obs.obs_data_get_string(settings, "game_select")
     category_name = obs.obs_data_get_string(settings, "category_select")
     show_ms = obs.obs_data_get_bool(settings, "show_ms")
+    device_blacklist = obs.obs_data_get_string(settings, "device_blacklist")
+    device_filter = obs.obs_data_get_string(settings, "device_filter")
+    enable_logging = obs.obs_data_get_bool(settings, "enable_logging")
+    log(f"Script updated. Blacklist: {device_blacklist}, Filter: {device_filter}, Logging: {enable_logging}")
 
     # Update font families from font settings
     n_font_data = obs.obs_data_get_obj(settings, "normal_font_select")
@@ -584,15 +679,25 @@ def script_update(settings):
 
     load_splits()
 
-    if not input_thread:
+    if input_thread is None or not input_thread.is_alive():
+        log("Starting input monitor thread...", obs.LOG_WARNING)
         running = True
         input_thread = threading.Thread(target=input_monitor, daemon=True)
         input_thread.start()
+    else:
+        log("Input monitor thread already running.")
 
 
 def script_tick(seconds):
+    global input_thread
     if source_name:
         update_source()
+    
+    # Ensure input thread is running
+    if running and (input_thread is None or not input_thread.is_alive()):
+        log("Input thread not running, starting/restarting...", obs.LOG_WARNING)
+        input_thread = threading.Thread(target=input_monitor, daemon=True)
+        input_thread.start()
 
 
 def script_unload():
