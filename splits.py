@@ -11,6 +11,7 @@ import time
 import json
 import os
 import re
+import base64
 from evdev import InputDevice, ecodes, list_devices
 from select import select
 
@@ -21,6 +22,7 @@ splits_file_path = ""
 history_file_path = ""
 game_name = ""
 category_name = ""
+game_image_path = ""
 split_names = []
 
 # Configurable UI State
@@ -58,18 +60,31 @@ def load_splits_data():
         return None
 
 def load_splits():
-    global game_name, category_name, split_names, segment_history, history_file_path
+    global game_name, category_name, split_names, segment_history, history_file_path, game_image_path
     data = load_splits_data()
     if not data:
         return
 
     try:
-        if game_name in data and category_name in data[game_name]:
-            split_names = data[game_name][category_name]
+        if game_name in data:
+            game_data = data[game_name]
+            game_image_path = game_data.get("image", "")
+            categories = game_data.get("categories", {})
+            
+            if category_name in categories:
+                split_names = categories[category_name]
+            elif categories:
+                category_name = list(categories.keys())[0]
+                split_names = categories[category_name]
         else:
+            # Fallback to first available game
             game_name = list(data.keys())[0]
-            category_name = list(data[game_name].keys())[0]
-            split_names = data[game_name][category_name]
+            game_data = data[game_name]
+            game_image_path = game_data.get("image", "")
+            categories = game_data.get("categories", {})
+            if categories:
+                category_name = list(categories.keys())[0]
+                split_names = categories[category_name]
             
         history_file_path = splits_file_path.replace(".json", "_history.json")
         if os.path.exists(history_file_path):
@@ -99,7 +114,7 @@ def format_time(seconds, show_plus=False, decimal_places=2, strip_leading_zero=F
         elif seconds < -0.001:
             prefix = "-"
         else:
-            prefix = "-" # If it's a new PB/Gold (approx 0), show -0.0
+            prefix = "-" 
         seconds = abs(seconds)
     elif seconds < 0:
         prefix = "-"
@@ -122,7 +137,6 @@ def format_time(seconds, show_plus=False, decimal_places=2, strip_leading_zero=F
         time_str = f"{mins:02}:{sec_str}"
 
     if strip_leading_zero:
-        # Strips exactly one leading zero from the start of the time numbers
         time_str = re.sub(r'^0', '', time_str)
         
     return f"{prefix}{time_str}"
@@ -133,6 +147,20 @@ def get_best_segment(index):
     name = split_names[index]
     history = segment_history.get(name, [])
     return min(history) if history else None
+
+def get_image_data_uri(path):
+    """Converts a local image to a base64 data URI for SVG embedding."""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        ext = os.path.splitext(path)[1].lower().strip(".")
+        mime = f"image/{ext}" if ext != "jpg" else "image/jpeg"
+        with open(path, "rb") as img_file:
+            b64_string = base64.b64encode(img_file.read()).decode("utf-8")
+        return f"data:{mime};base64,{b64_string}"
+    except Exception as e:
+        print(f"Error encoding image: {e}")
+        return None
 
 def input_monitor():
     global gamepad, timer_running, current_split_index, start_time, last_press_time, running
@@ -202,7 +230,8 @@ def reset_timer():
     split_times = []
 
 def generate_svg():
-    global bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms, current_split_index, start_time, timer_running, split_times, segment_history
+    global bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
+    global current_split_index, start_time, timer_running, split_times, segment_history, game_image_path
     
     hex_color = bg_color.lstrip('#')
     rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
@@ -220,18 +249,27 @@ def generate_svg():
 
     svg = [
         f'<svg width="{svg_width}" height="{svg_height}" xmlns="http://www.w3.org/2000/svg">',
-        f'<rect width="100%" height="100%" fill="{rgba_str}" rx="{corner_radius}"/>',
-        f'<text x="20" y="40" fill="{highlight_color}" font-family="{font_family}" font-size="{20 * font_scale}" font-weight="bold">{game_name}</text>',
-        f'<text x="20" y="65" fill="{text_color}" font-family="{font_family}" font-size="{14 * font_scale}">{category_name}</text>',
-        '<line x1="20" y1="80" x2="380" y2="80" stroke="#444" stroke-width="1"/>'
+        f'<rect width="100%" height="100%" fill="{rgba_str}" rx="{corner_radius}"/>'
     ]
+
+    text_x_start = 20
+    image_uri = get_image_data_uri(game_image_path)
+    if image_uri:
+        img_size = 50 * font_scale
+        svg.append(f'<image href="{image_uri}" x="20" y="20" width="{img_size}" height="{img_size}" />')
+        text_x_start = 30 + img_size
+
+    svg.extend([
+        f'<text x="{text_x_start}" y="40" fill="{highlight_color}" font-family="{font_family}" font-size="{20 * font_scale}" font-weight="bold">{game_name}</text>',
+        f'<text x="{text_x_start}" y="65" fill="{text_color}" font-family="{font_family}" font-size="{14 * font_scale}">{category_name}</text>',
+        '<line x1="20" y1="80" x2="380" y2="80" stroke="#444" stroke-width="1"/>'
+    ])
 
     timer_display_color = text_color
     if timer_running and current_split_index >= 0:
         best_seg = get_best_segment(current_split_index)
         prev_total = split_times[current_split_index-1] if (current_split_index > 0 and len(split_times) >= current_split_index) else 0
         current_seg_elapsed = current_total_elapsed - prev_total
-        
         if best_seg:
             timer_display_color = green_color if current_seg_elapsed < best_seg else red_color
 
@@ -239,11 +277,8 @@ def generate_svg():
     seg_decimals = 2 if show_ms else 0
 
     for i, name in enumerate(split_names):
-        # Name uses standard text color
-        color = text_color
         time_str = "--:--"
         delta_str = ""
-        
         segment_time_color = text_color
         delta_time_color = text_color
         
@@ -251,13 +286,10 @@ def generate_svg():
         history_list = segment_history.get(name, [])
 
         if i < len(split_times):
-            # Completed Split
             actual_seg = split_times[i] - prev_total
-            time_str = format_time(actual_seg, decimal_places=seg_decimals, strip_leading_zero=False)
-            
+            time_str = format_time(actual_seg, decimal_places=seg_decimals)
             if len(history_list) > 1:
-                other_times = history_list[:-1]
-                comparison_best = min(other_times)
+                comparison_best = min(history_list[:-1])
             elif len(history_list) == 1:
                 comparison_best = history_list[0]
             else:
@@ -266,24 +298,19 @@ def generate_svg():
             if comparison_best is not None:
                 delta = actual_seg - comparison_best
                 delta_str = format_time(delta, show_plus=True, decimal_places=1, strip_leading_zero=True)
-                
-                # Logic: Delta is only green/red. Segment time can be gold/green/red.
                 delta_time_color = green_color if delta < 0 else red_color
                 segment_time_color = gold_color if actual_seg <= (comparison_best + 0.001) else (green_color if delta < 0 else red_color)
-
         elif i == current_split_index:
-            # Active Split
             segment_time_color = timer_display_color
-            current_seg_run = current_total_elapsed - prev_total
-            time_str = format_time(current_seg_run, decimal_places=seg_decimals, strip_leading_zero=False)
+            time_str = format_time(current_total_elapsed - prev_total, decimal_places=seg_decimals)
             
-        svg.append(f'<text x="20" y="{y_offset}" fill="{color}" font-family="{font_family}" font-size="{16 * font_scale}">{name}</text>')
+        svg.append(f'<text x="20" y="{y_offset}" fill="{text_color}" font-family="{font_family}" font-size="{16 * font_scale}">{name}</text>')
         if delta_str:
             svg.append(f'<text x="310" y="{y_offset}" fill="{delta_time_color}" font-family="{font_family}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
         svg.append(f'<text x="380" y="{y_offset}" fill="{segment_time_color}" font-family="{font_family}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
         y_offset += line_spacing
 
-    svg.append(f'<text x="380" y="{svg_height - 30}" fill="{timer_display_color}" font-family="{font_family}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed, strip_leading_zero=False)}</text>')
+    svg.append(f'<text x="380" y="{svg_height - 30}" fill="{timer_display_color}" font-family="{font_family}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed)}</text>')
     svg.append('</svg>')
     return "".join(svg)
 
@@ -310,8 +337,10 @@ def script_description():
 def script_properties():
     props = obs.obs_properties_create()
     obs.obs_properties_add_path(props, "splits_file", "Splits JSON File", obs.OBS_PATH_FILE, "*.json", None)
+    
     g_list = obs.obs_properties_add_list(props, "game_select", "Game", obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
     c_list = obs.obs_properties_add_list(props, "category_select", "Category", obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    
     obs.obs_properties_add_color(props, "bg_color", "Background Color")
     obs.obs_properties_add_int(props, "bg_opacity", "Opacity (%)", 0, 100, 1)
     obs.obs_properties_add_int(props, "corner_radius", "Corner Radius", 0, 100, 1)
@@ -323,8 +352,11 @@ def script_properties():
     if data:
         for g in data.keys():
             obs.obs_property_list_add_string(g_list, g, g)
-        first_game = list(data.keys())[0]
-        for c in data[first_game].keys():
+        
+        # Populate categories for the currently selected game
+        current_g = list(data.keys())[0]
+        categories = data[current_g].get("categories", {})
+        for c in categories.keys():
             obs.obs_property_list_add_string(c_list, c, c)
 
     p = obs.obs_properties_add_list(props, "source", "Image Source", obs.OBS_COMBO_TYPE_EDITABLE, obs.OBS_COMBO_FORMAT_STRING)
@@ -348,12 +380,10 @@ def script_update(settings):
     show_ms = obs.obs_data_get_bool(settings, "show_ms")
     
     font_scale = obs.obs_data_get_double(settings, "font_scale")
-    if font_scale <= 0:
-        font_scale = 1.0
+    if font_scale <= 0: font_scale = 1.0
 
     line_spacing = obs.obs_data_get_int(settings, "line_spacing")
-    if line_spacing <= 0:
-        line_spacing = 30
+    if line_spacing <= 0: line_spacing = 30
     
     bg_color_int = obs.obs_data_get_int(settings, "bg_color")
     bg_color = "#{:06x}".format(bg_color_int & 0xFFFFFF)
