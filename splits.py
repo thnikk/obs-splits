@@ -511,6 +511,13 @@ def generate_svg():
 
         prev_total = split_times[i - 1] if (i > 0 and len(split_times) >= i) else 0
 
+        if i == current_split_index:
+            font_size = 16 * font_scale
+            text_center_offset = font_size * 0.35
+            rect_y = y_offset - text_center_offset - line_spacing / 2
+            svg.append(
+                f'<rect x="5" y="{rect_y}" width="390" height="{line_spacing}" rx="8" fill="#2b303b" opacity="0.9"/>')
+
         if i < len(split_times):
             actual_seg = split_times[i] - prev_total
             time_str = format_time(actual_seg, decimal_places=seg_decimals)
@@ -555,12 +562,12 @@ def generate_svg():
                 current_total_elapsed - prev_total, decimal_places=seg_decimals)
 
         svg.append(
-            f'<text x="20" y="{y_offset}" fill="{text_color}" font-family="{normal_font}" font-size="{16 * font_scale}">{name}</text>')
+            f'<text x="15" y="{y_offset}" fill="{text_color}" font-family="{normal_font}" font-size="{16 * font_scale}">{name}</text>')
         if delta_str:
             svg.append(
-                f'<text x="290" y="{y_offset}" fill="{delta_time_color}" font-family="{mono_font}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
+                f'<text x="280" y="{y_offset}" fill="{delta_time_color}" font-family="{mono_font}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
         svg.append(
-            f'<text x="380" y="{y_offset}" fill="{segment_time_color}" font-family="{mono_font}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
+            f'<text x="385" y="{y_offset}" fill="{segment_time_color}" font-family="{mono_font}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
         y_offset += line_spacing
 
     pb_str = format_time(pb_total) if pb_total is not None and pb_total > 0 else "--:--"
