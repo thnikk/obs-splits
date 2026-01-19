@@ -32,7 +32,7 @@ def log(message, level=None):
     except:
         pass
 
-log("Splits script loaded", obs.LOG_WARNING)
+log("Splits script loaded", obs.LOG_INFO)
 
 # --- Global State ---
 running = True
@@ -254,7 +254,7 @@ def input_monitor():
     global gamepad, timer_running, current_split_index, start_time, last_press_time, running
     global is_held, reset_triggered, device_blacklist, device_filter, debug_status, input_code
 
-    log("Input monitor thread started", obs.LOG_WARNING)
+    log("Input monitor thread started", obs.LOG_INFO)
     debug_status = "Monitor Started"
     try:
         while running:
@@ -303,7 +303,7 @@ def input_monitor():
                     
                     if is_match:
                         gamepad = dev
-                        log(f"Controller connected: {dev.name} ({dev.path})", obs.LOG_WARNING)
+                        log(f"Controller connected: {dev.name} ({dev.path})", obs.LOG_INFO)
                         debug_status = f"Connected: {dev.name}"
                         break
                     else:
@@ -336,7 +336,7 @@ def input_monitor():
                                 reset_triggered = False
             except (OSError, Exception) as e:
                 if gamepad:
-                    log(f"Controller disconnected: {gamepad.name} - Error: {e}", obs.LOG_WARNING)
+                    log(f"Controller disconnected: {gamepad.name} - Error: {e}", obs.LOG_INFO)
                     try:
                         gamepad.close()
                     except:
@@ -346,10 +346,10 @@ def input_monitor():
                 reset_triggered = False
                 debug_status = "Disconnected"
     except Exception as e:
-        log(f"Input monitor fatal error: {e}", obs.LOG_WARNING)
+        log(f"Input monitor fatal error: {e}", obs.LOG_INFO)
         debug_status = f"Fatal Error: {e}"
     finally:
-        log("Input monitor thread stopped", obs.LOG_WARNING)
+        log("Input monitor thread stopped", obs.LOG_INFO)
         debug_status = "Thread Stopped"
 
 
@@ -405,7 +405,7 @@ def trigger_split():
 
 def reset_timer():
     global current_split_index, timer_running, split_times
-    log("Reset timer triggered", obs.LOG_WARNING)
+    log("Reset timer triggered", obs.LOG_INFO)
     current_split_index = -1
     timer_running = False
     split_times = []
@@ -595,6 +595,17 @@ def update_source():
         obs.obs_source_release(source)
 
 
+def script_defaults(settings):
+    obs.obs_data_set_default_int(settings, "input_code", 167)
+    obs.obs_data_set_default_bool(settings, "show_ms", True)
+    obs.obs_data_set_default_bool(settings, "use_dynamic_height", True)
+    obs.obs_data_set_default_int(settings, "height_setting", 600)
+    obs.obs_data_set_default_int(settings, "bg_opacity", 100)
+    obs.obs_data_set_default_int(settings, "corner_radius", 10)
+    obs.obs_data_set_default_double(settings, "font_scale", 1.0)
+    obs.obs_data_set_default_int(settings, "line_spacing", 30)
+
+
 def script_description():
     return "SVG Speedrun Splits Display.\nPress KEY_RECORD to split, hold for 1s to reset.\nRequires 'evdev' and system fonts."
 
@@ -635,6 +646,7 @@ def script_properties():
     obs.obs_properties_add_int(props, "input_code", "Input Event Code", 0, 1000, 1)
 
     data = load_splits_data()
+
     if data:
         for g in data.keys():
             obs.obs_property_list_add_string(g_list, g, g)
@@ -669,6 +681,7 @@ def script_update(settings):
     device_filter = obs.obs_data_get_string(settings, "device_filter")
     input_code = obs.obs_data_get_int(settings, "input_code")
     log(f"Script updated. Blacklist: {device_blacklist}, Filter: {device_filter}, Code: {input_code}")
+
 
     # Update font families from font settings
     n_font_data = obs.obs_data_get_obj(settings, "normal_font_select")
