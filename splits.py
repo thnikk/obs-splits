@@ -256,6 +256,8 @@ def generate_svg():
     green_color = "#44ff44"
     red_color = "#ff4444"
     font_family = "'Nunito', sans-serif"
+    # Monospace font for time values to ensure alignment
+    mono_font = "'Courier New', Courier, monospace"
 
     now = time.time()
     current_total_elapsed = (
@@ -264,18 +266,15 @@ def generate_svg():
     # Height Logic
     header_height = 90
     splits_height = len(split_names) * line_spacing
-    footer_height = 100  # Increased to fit PB/SoB
+    footer_height = 100
     content_height = header_height + splits_height + footer_height
 
     total_svg_height = height_setting
 
-    # Calculate where the content box starts relative to the top of the SVG
     if use_dynamic_height:
-        # Anchor to bottom: The box is content_height tall, sitting at the bottom of height_setting
         content_start_y = max(0, total_svg_height - content_height)
         render_height = min(content_height, total_svg_height)
     else:
-        # Full height background
         content_start_y = 0
         render_height = total_svg_height
 
@@ -284,7 +283,6 @@ def generate_svg():
         f'<rect x="0" y="{content_start_y}" width="100%" height="{render_height}" fill="{rgba_str}" rx="{corner_radius}"/>'
     ]
 
-    # Shift drawing coordinates by content_start_y
     text_x_start = 20
     image_uri = get_image_data_uri(game_image_path)
     if image_uri:
@@ -311,10 +309,18 @@ def generate_svg():
     y_offset = content_start_y + 110
     seg_decimals = 2 if show_ms else 0
 
-    # Stats Calculation
+    # Calculate Sum of Best
     sob_total = 0
-    pb_total = 0
-    has_pb = False
+    for name in split_names:
+        history_list = segment_history.get(name, [])
+        if history_list:
+            sob_total += min(history_list)
+
+    # Calculate PB/Delta for final time color
+    # We compare current_total_elapsed against the sum of best segments as the PB reference
+    final_timer_color = text_color
+    if sob_total > 0:
+        final_timer_color = green_color if current_total_elapsed < sob_total else red_color
 
     for i, name in enumerate(split_names):
         time_str = "--:--"
@@ -324,10 +330,6 @@ def generate_svg():
 
         prev_total = split_times[i - 1] if (i > 0 and len(split_times) >= i) else 0
         history_list = segment_history.get(name, [])
-
-        # Sum of Best calculation
-        if history_list:
-            sob_total += min(history_list)
 
         if i < len(split_times):
             actual_seg = split_times[i] - prev_total
@@ -355,20 +357,21 @@ def generate_svg():
             f'<text x="20" y="{y_offset}" fill="{text_color}" font-family="{font_family}" font-size="{16 * font_scale}">{name}</text>')
         if delta_str:
             svg.append(
-                f'<text x="310" y="{y_offset}" fill="{delta_time_color}" font-family="{font_family}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
+                f'<text x="310" y="{y_offset}" fill="{delta_time_color}" font-family="{mono_font}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
         svg.append(
-            f'<text x="380" y="{y_offset}" fill="{segment_time_color}" font-family="{font_family}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
+            f'<text x="380" y="{y_offset}" fill="{segment_time_color}" font-family="{mono_font}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
         y_offset += line_spacing
 
-    # PB Calculation (Sum of best segment times from history - rudimentary PB)
     pb_str = format_time(sob_total) if sob_total > 0 else "--:--"
     sob_str = format_time(sob_total) if sob_total > 0 else "--:--"
 
-    # Footer rendering
     footer_y = content_start_y + render_height
-    svg.append(f'<text x="20" y="{footer_y - 45}" fill="{text_color}" font-family="{font_family}" font-size="{12 * font_scale}" opacity="0.7">PB: {pb_str}</text>')
-    svg.append(f'<text x="20" y="{footer_y - 25}" fill="{text_color}" font-family="{font_family}" font-size="{12 * font_scale}" opacity="0.7">Sum of Best: {sob_str}</text>')
-    svg.append(f'<text x="380" y="{footer_y - 30}" fill="{timer_display_color}" font-family="{font_family}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed)}</text>')
+    # PB and SoB labels use mono font for values
+    svg.append(f'<text x="20" y="{footer_y - 45}" fill="{text_color}" font-family="{font_family}" font-size="{12 * font_scale}" opacity="0.7">PB: <tspan font-family="{mono_font}">{pb_str}</tspan></text>')
+    svg.append(f'<text x="20" y="{footer_y - 25}" fill="{text_color}" font-family="{font_family}" font-size="{12 * font_scale}" opacity="0.7">Sum of Best: <tspan font-family="{mono_font}">{sob_str}</tspan></text>')
+    
+    # Large timer uses mono font and final_timer_color (relative to PB)
+    svg.append(f'<text x="380" y="{footer_y - 30}" fill="{final_timer_color}" font-family="{mono_font}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed)}</text>')
     
     svg.append('</svg>')
     return "".join(svg)
