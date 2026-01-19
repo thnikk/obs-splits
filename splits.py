@@ -20,6 +20,12 @@ device_blacklist = ""
 device_filter = ""
 input_code = 167
 
+
+def int_to_hex_color(color_int):
+    """Convert OBS int color (BGR) to hex color string (#RRGGBB)."""
+    hex_color = "#{:06x}".format(color_int & 0xFFFFFF)
+    return "#" + hex_color[5:7] + hex_color[3:5] + hex_color[1:3]
+
 def log(message, level=None):
     if level is None:
         try:
@@ -54,6 +60,14 @@ show_ms = True
 use_dynamic_height = True
 height_setting = 600
 svg_width = 400
+# Colors
+text_color = "#ffffff"
+highlight_color = "#4c91f0"
+gold_color = "#ffda44"
+green_color = "#44ff44"
+red_color = "#ff4444"
+active_segment_bg = "#2b303b"
+separator_color = "#444444"
 # User-defined fonts (configured via OBS properties)
 normal_font = "Nunito"
 mono_font = "Courier New"
@@ -419,16 +433,11 @@ def generate_svg():
     global current_split_index, start_time, timer_running, split_times, segment_history, game_image_path
     global use_dynamic_height, height_setting, svg_width, normal_font, mono_font
     global comparison_pb_segments, comparison_best_segments, comparison_pb_total, debug_status
+    global text_color, highlight_color, gold_color, green_color, red_color, active_segment_bg, separator_color
 
     hex_color = bg_color.lstrip('#')
     rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
     rgba_str = f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {bg_opacity / 100})"
-
-    text_color = "#ffffff"
-    highlight_color = "#4c91f0"
-    gold_color = "#ffda44"
-    green_color = "#44ff44"
-    red_color = "#ff4444"
 
     now = time.time()
     current_total_elapsed = (
@@ -465,7 +474,7 @@ def generate_svg():
     svg.extend([
         f'<text x="{text_x_start}" y="{content_start_y + 40}" fill="{highlight_color}" font-family="{normal_font}" font-size="{20 * font_scale}" font-weight="bold">{game_name}</text>',
         f'<text x="{text_x_start}" y="{content_start_y + 65}" fill="{text_color}" font-family="{normal_font}" font-size="{14 * font_scale}">{category_name}</text>',
-        f'<line x1="20" y1="{content_start_y + 80}" x2="380" y2="{content_start_y + 80}" stroke="#444" stroke-width="1"/>'
+        f'<line x1="20" y1="{content_start_y + 80}" x2="380" y2="{content_start_y + 80}" stroke="{separator_color}" stroke-width="1"/>'
     ])
 
     timer_display_color = text_color
@@ -516,7 +525,7 @@ def generate_svg():
             text_center_offset = font_size * 0.35
             rect_y = y_offset - text_center_offset - line_spacing / 2
             svg.append(
-                f'<rect x="5" y="{rect_y}" width="390" height="{line_spacing}" rx="8" fill="#2b303b" opacity="0.9"/>')
+                f'<rect x="5" y="{rect_y}" width="390" height="{line_spacing}" rx="8" fill="{active_segment_bg}" opacity="0.9"/>')
 
         if i < len(split_times):
             actual_seg = split_times[i] - prev_total
@@ -611,6 +620,13 @@ def script_defaults(settings):
     obs.obs_data_set_default_int(settings, "corner_radius", 10)
     obs.obs_data_set_default_double(settings, "font_scale", 1.0)
     obs.obs_data_set_default_int(settings, "line_spacing", 30)
+    obs.obs_data_set_default_int(settings, "text_color", 16777215)
+    obs.obs_data_set_default_int(settings, "highlight_color", 15729804)
+    obs.obs_data_set_default_int(settings, "gold_color", 4492671)
+    obs.obs_data_set_default_int(settings, "green_color", 4494276)
+    obs.obs_data_set_default_int(settings, "red_color", 4487039)
+    obs.obs_data_set_default_int(settings, "active_segment_bg", 3875715)
+    obs.obs_data_set_default_int(settings, "separator_color", 4473924)
 
 
 def script_description():
@@ -631,7 +647,14 @@ def script_properties():
     obs.obs_properties_add_int(props, "bg_opacity", "Opacity (%)", 0, 100, 1)
     obs.obs_properties_add_int(
         props, "corner_radius", "Corner Radius", 0, 100, 1)
-    
+    obs.obs_properties_add_color(props, "text_color", "Text Color")
+    obs.obs_properties_add_color(props, "highlight_color", "Highlight Color")
+    obs.obs_properties_add_color(props, "gold_color", "Gold Segment Color")
+    obs.obs_properties_add_color(props, "green_color", "Ahead/Green Color")
+    obs.obs_properties_add_color(props, "red_color", "Behind/Red Color")
+    obs.obs_properties_add_color(props, "active_segment_bg", "Active Segment Background")
+    obs.obs_properties_add_color(props, "separator_color", "Separator Line Color")
+
     # Font Selection Menus
     obs.obs_properties_add_font(props, "normal_font_select", "Normal Font")
     obs.obs_properties_add_font(props, "mono_font_select", "Monospace Font")
@@ -678,6 +701,7 @@ def script_update(settings):
     global source_name, splits_file_path, input_thread, running
     global game_name, category_name, bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
     global use_dynamic_height, height_setting, normal_font, mono_font, device_blacklist, device_filter, input_code
+    global text_color, highlight_color, gold_color, green_color, red_color, active_segment_bg, separator_color
 
     source_name = obs.obs_data_get_string(settings, "source")
     splits_file_path = obs.obs_data_get_string(settings, "splits_file")
@@ -695,7 +719,7 @@ def script_update(settings):
     if n_font_data:
         normal_font = obs.obs_data_get_string(n_font_data, "face")
         obs.obs_data_release(n_font_data)
-    
+
     m_font_data = obs.obs_data_get_obj(settings, "mono_font_select")
     if m_font_data:
         mono_font = obs.obs_data_get_string(m_font_data, "face")
@@ -713,8 +737,15 @@ def script_update(settings):
         line_spacing = 30
 
     bg_color_int = obs.obs_data_get_int(settings, "bg_color")
-    bg_color = "#{:06x}".format(bg_color_int & 0xFFFFFF)
-    bg_color = "#" + bg_color[5:7] + bg_color[3:5] + bg_color[1:3]
+    bg_color = int_to_hex_color(bg_color_int)
+
+    text_color = int_to_hex_color(obs.obs_data_get_int(settings, "text_color"))
+    highlight_color = int_to_hex_color(obs.obs_data_get_int(settings, "highlight_color"))
+    gold_color = int_to_hex_color(obs.obs_data_get_int(settings, "gold_color"))
+    green_color = int_to_hex_color(obs.obs_data_get_int(settings, "green_color"))
+    red_color = int_to_hex_color(obs.obs_data_get_int(settings, "red_color"))
+    active_segment_bg = int_to_hex_color(obs.obs_data_get_int(settings, "active_segment_bg"))
+    separator_color = int_to_hex_color(obs.obs_data_get_int(settings, "separator_color"))
 
     bg_opacity = obs.obs_data_get_int(settings, "bg_opacity")
     corner_radius = obs.obs_data_get_int(settings, "corner_radius")
