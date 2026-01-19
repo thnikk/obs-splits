@@ -586,6 +586,16 @@ def generate_svg():
                         delta_time_color = green_color if delta < 0 else red_color
         elif i == current_split_index:
             best_seg = get_best_segment(i)
+            # Live Delta Implementation:
+            # Show delta if current segment duration - best segment > -10 seconds
+            if timer_running and best_seg:
+                live_seg_duration = current_total_elapsed - prev_total
+                live_delta = live_seg_duration - best_seg
+                if live_delta > -10.0:
+                    delta_str = format_time(live_delta, show_plus=True, decimal_places=1, delta_format=True)
+                    # Use Red if already behind best, otherwise white/neutral for live preview
+                    delta_time_color = red_color if live_delta > 0 else text_color
+
             if show_best_segment_time and best_seg:
                 best_times = [get_best_segment(j) for j in range(i + 1)]
                 best_times = [t for t in best_times if t is not None]
