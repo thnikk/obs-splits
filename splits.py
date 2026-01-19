@@ -236,8 +236,11 @@ def format_time(seconds, show_plus=False, decimal_places=2, strip_leading_zero=F
     else:
         time_str = f"{mins:02}:{sec_str}"
 
-    if strip_leading_zero and not delta_format:
-        time_str = re.sub(r'^0', '', time_str)
+    if strip_leading_zero:
+        if delta_format and mins > 0 and hrs == 0:
+            time_str = re.sub(r'^0:', '', time_str)
+        elif not delta_format:
+            time_str = re.sub(r'^0', '', time_str)
 
     return f"{prefix}{time_str}"
 
@@ -562,20 +565,17 @@ def generate_svg():
                 # Red: actual_seg > comp_pb (or > comp_best if no PB)
 
                 if not show_best_segment_time:
+                    segment_time_color = text_color
                     if actual_seg <= comp_best + 0.001:
-                        segment_time_color = gold_color
                         delta_time_color = gold_color
                     elif comp_pb is not None:
                         if actual_seg < comp_pb:
-                            segment_time_color = green_color
                             delta_time_color = green_color
                         else:
-                            segment_time_color = red_color
                             delta_time_color = red_color
                     else:
                         # Fallback if no PB data
                         delta_time_color = green_color if delta < 0 else red_color
-                        segment_time_color = green_color if delta < 0 else red_color
                 else:
                     # Delta colors still apply when showing best times
                     if actual_seg <= comp_best + 0.001:
@@ -593,7 +593,7 @@ def generate_svg():
                 time_str = format_time(cumulative_best, decimal_places=seg_decimals)
                 segment_time_color = text_color
             else:
-                segment_time_color = timer_display_color
+                segment_time_color = text_color
                 time_str = format_time(
                     current_total_elapsed - prev_total, decimal_places=seg_decimals)
         else:
@@ -610,7 +610,7 @@ def generate_svg():
             f'<text x="15" y="{y_offset}" fill="{text_color}" font-family="{normal_font}" font-size="{16 * font_scale}">{name}</text>')
         if delta_str:
             svg.append(
-                f'<text x="280" y="{y_offset}" fill="{delta_time_color}" font-family="{mono_font}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
+                f'<text x="310" y="{y_offset}" fill="{delta_time_color}" font-family="{mono_font}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
         svg.append(
             f'<text x="385" y="{y_offset}" fill="{segment_time_color}" font-family="{mono_font}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
         y_offset += line_spacing
