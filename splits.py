@@ -96,9 +96,13 @@ def load_splits():
                 split_names = categories[category_name]
 
         history_file_path = splits_file_path.replace(".json", "_history.json")
+        segment_history = {}
         if os.path.exists(history_file_path):
             with open(history_file_path, 'r') as f:
-                segment_history = json.load(f)
+                loaded_history = json.load(f)
+                for run_key, run_data in loaded_history.items():
+                    if isinstance(run_data, dict):
+                        segment_history[run_key] = run_data
     except Exception as e:
         print(f"Error loading splits: {e}")
 
@@ -108,9 +112,27 @@ def save_history():
         return
     try:
         with open(history_file_path, 'w') as f:
-            json.dump(segment_history, f)
+            json.dump(segment_history, f, indent='\t')
     except Exception as e:
         print(f"Error saving history: {e}")
+
+
+def save_run_to_history():
+    global segment_history
+    if len(split_times) != len(split_names):
+        return
+
+    from datetime import datetime
+    run_key = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    run_data = {}
+
+    for i, name in enumerate(split_names):
+        prev_total = split_times[i - 1] if i > 0 else 0
+        segment_time = split_times[i] - prev_total
+        run_data[name] = round(segment_time, 2)
+
+    segment_history[run_key] = run_data
+    save_history()
 
 
 def format_time(seconds, show_plus=False, decimal_places=2, strip_leading_zero=False):
@@ -157,8 +179,11 @@ def get_best_segment(index):
     if index < 0 or index >= len(split_names):
         return None
     name = split_names[index]
-    history = segment_history.get(name, [])
-    return min(history) if history else None
+    best_times = []
+    for run_data in segment_history.values():
+        if name in run_data:
+            best_times.append(run_data[name])
+    return min(best_times) if best_times else None
 
 
 def get_image_data_uri(path):
@@ -220,7 +245,7 @@ def input_monitor():
 
 
 def trigger_split():
-    global current_split_index, timer_running, start_time, split_times, segment_history
+    global current_split_index, timer_running, start_time, split_times
     now = time.time()
 
     if not timer_running and current_split_index == -1:
@@ -235,15 +260,9 @@ def trigger_split():
         prev_total = split_times[-2] if len(split_times) > 1 else 0
         segment_time = elapsed - prev_total
 
-        if current_split_index < len(split_names):
-            name = split_names[current_split_index]
-            if name not in segment_history:
-                segment_history[name] = []
-            segment_history[name].append(segment_time)
-
         if current_split_index >= len(split_names) - 1:
             timer_running = False
-            save_history()
+            save_run_to_history()
         else:
             current_split_index += 1
 
@@ -323,14 +342,20 @@ def generate_svg():
     # Calculate Sum of Best (SoB) and Personal Best (PB)
     sob_total = 0
     for name in split_names:
-        history_list = segment_history.get(name, [])
-        if history_list:
-            sob_total += min(history_list)
+        best_time = get_best_segment(split_names.index(name))
+        if best_time is not None:
+            sob_total += best_time
 
-    # Color final timer relative to PB (SoB)
+    pb_total = None
+    for run_data in segment_history.values():
+        run_total = sum(run_data.values())
+        if pb_total is None or run_total < pb_total:
+            pb_total = run_total
+
+    # Color final timer relative to PB
     final_timer_color = text_color
-    if sob_total > 0:
-        final_timer_color = green_color if current_total_elapsed < sob_total else red_color
+    if pb_total is not None and pb_total > 0:
+        final_timer_color = green_color if current_total_elapsed < pb_total else red_color
 
     for i, name in enumerate(split_names):
         time_str = "--:--"
@@ -339,15 +364,16 @@ def generate_svg():
         delta_time_color = text_color
 
         prev_total = split_times[i - 1] if (i > 0 and len(split_times) >= i) else 0
-        history_list = segment_history.get(name, [])
+        all_times_for_segment = []
+        for run_data in segment_history.values():
+            if name in run_data:
+                all_times_for_segment.append(run_data[name])
 
         if i < len(split_times):
             actual_seg = split_times[i] - prev_total
             time_str = format_time(actual_seg, decimal_places=seg_decimals)
-            if len(history_list) > 1:
-                comparison_best = min(history_list[:-1])
-            elif len(history_list) == 1:
-                comparison_best = history_list[0]
+            if all_times_for_segment:
+                comparison_best = min(all_times_for_segment)
             else:
                 comparison_best = None
 
@@ -372,7 +398,7 @@ def generate_svg():
             f'<text x="380" y="{y_offset}" fill="{segment_time_color}" font-family="{mono_font}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
         y_offset += line_spacing
 
-    pb_str = format_time(sob_total) if sob_total > 0 else "--:--"
+    pb_str = format_time(pb_total) if pb_total is not None and pb_total > 0 else "--:--"
     sob_str = format_time(sob_total) if sob_total > 0 else "--:--"
 
     # Footer rendering
