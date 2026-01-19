@@ -50,7 +50,9 @@ timer_running = False
 input_thread = None
 gamepad = None
 last_press_time = 0
-HOLD_THRESHOLD = 1.5
+HOLD_THRESHOLD = 1.0  # Adjusted to 1.0s per request
+is_held = False
+reset_triggered = False
 
 
 def load_splits_data():
@@ -176,6 +178,7 @@ def get_image_data_uri(path):
 
 def input_monitor():
     global gamepad, timer_running, current_split_index, start_time, last_press_time, running
+    global is_held, reset_triggered
 
     while running:
         if gamepad is None:
@@ -192,19 +195,27 @@ def input_monitor():
                 continue
 
         try:
-            r, w, x = select([gamepad.fd], [], [], 0.5)
+            r, w, x = select([gamepad.fd], [], [], 0.1)  # Increased polling frequency for hold check
+            
+            # Check for hold duration while key is pressed
+            if is_held and not reset_triggered:
+                if (time.time() - last_press_time) > HOLD_THRESHOLD:
+                    reset_timer()
+                    reset_triggered = True
+
             if r:
                 for event in gamepad.read():
                     if event.type == ecodes.EV_KEY and event.code == 167:
-                        if event.value == 1:
+                        if event.value == 1:  # Key Down
                             last_press_time = time.time()
-                        elif event.value == 0:
-                            duration = time.time() - last_press_time
-                            if duration > HOLD_THRESHOLD:
-                                reset_timer()
-                            else:
+                            is_held = True
+                            reset_triggered = False
+                        elif event.value == 0:  # Key Up
+                            is_held = False
+                            if not reset_triggered:
                                 trigger_split()
-        except:
+                            reset_triggered = False
+        except Exception:
             gamepad = None
 
 
@@ -390,12 +401,11 @@ def update_source():
             obs.obs_data_release(settings)
         except Exception as e:
             print(f"Error updating SVG: {e}")
-        # Fixed error: Correct function is obs_source_release
         obs.obs_source_release(source)
 
 
 def script_description():
-    return "SVG Speedrun Splits Display.\nPress KEY_RECORD to split, hold to reset.\nRequires 'evdev' and system fonts."
+    return "SVG Speedrun Splits Display.\nPress KEY_RECORD to split, hold for 1s to reset.\nRequires 'evdev' and system fonts."
 
 
 def script_properties():
