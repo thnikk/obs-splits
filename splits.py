@@ -62,7 +62,8 @@ mono_font = "Courier New"
 current_split_index = -1
 start_time = 0
 split_times = []
-segment_history = {}  # segment_name: [list of best times]
+full_history = {} # Game -> Category -> Timestamp -> Segments
+segment_history = {}  # Reference to full_history[game][category]
 timer_running = False
 
 # Comparison Data (Snapshots at start of run)
@@ -121,13 +122,36 @@ def load_splits():
                 split_names = categories[category_name]
 
         history_file_path = splits_file_path.replace(".json", "_history.json")
-        segment_history = {}
+        global full_history
+        full_history = {}
         if os.path.exists(history_file_path):
             with open(history_file_path, 'r') as f:
-                loaded_history = json.load(f)
-                for run_key, run_data in loaded_history.items():
-                    if isinstance(run_data, dict):
-                        segment_history[run_key] = run_data
+                try:
+                    full_history = json.load(f)
+                except Exception as e:
+                    log(f"Error parsing history JSON: {e}")
+                    full_history = {}
+
+        # Migration: Check if the loaded history is in the old flat format
+        # Old format: top-level keys are timestamps (e.g., "2026-01-19 12:00:00")
+        is_old_format = False
+        for k in full_history.keys():
+            if re.match(r'\d{4}-\d{2}-\d{2}', str(k)):
+                is_old_format = True
+                break
+        
+        if is_old_format:
+            log("Migrating old flat history to nested format...")
+            full_history = {game_name: {category_name: full_history}}
+            save_history()
+
+        # Set segment_history to the current category's data
+        if game_name not in full_history:
+            full_history[game_name] = {}
+        if category_name not in full_history[game_name]:
+            full_history[game_name][category_name] = {}
+        
+        segment_history = full_history[game_name][category_name]
     except Exception as e:
         log(f"Error loading splits: {e}")
 
@@ -137,7 +161,7 @@ def save_history():
         return
     try:
         with open(history_file_path, 'w') as f:
-            json.dump(segment_history, f, indent='\t')
+            json.dump(full_history, f, indent='\t')
     except Exception as e:
         log(f"Error saving history: {e}")
 
