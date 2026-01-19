@@ -28,6 +28,7 @@ bg_color = "#1e1e1e"
 bg_opacity = 100
 corner_radius = 10
 font_scale = 1.0
+line_spacing = 30
 show_ms = True
 svg_width = 400
 svg_height = 600
@@ -86,8 +87,8 @@ def save_history():
     except Exception as e:
         print(f"Error saving history: {e}")
 
-def format_time(seconds, show_plus=False, decimal_places=2):
-    """Formats seconds into MM:SS.h or HH:MM:SS.h with dynamic precision."""
+def format_time(seconds, show_plus=False, decimal_places=2, strip_leading_zero=False):
+    """Formats seconds into MM:SS.h or HH:MM:SS.h. Optionally strips the leftmost leading zero."""
     if seconds == 0 and not show_plus:
         return "--:--"
     
@@ -109,19 +110,23 @@ def format_time(seconds, show_plus=False, decimal_places=2):
     secs = seconds % 60
     
     if decimal_places == 1:
-        sec_str = f"{secs:02.1f}" if not show_plus else f"{secs:.1f}"
+        sec_str = f"{secs:04.1f}" # e.g. 06.1
     elif decimal_places == 0:
         sec_str = f"{int(secs):02d}"
     else:
-        sec_str = f"{secs:05.2f}"
+        sec_str = f"{secs:05.2f}" # e.g. 08.11
 
     if hrs > 0:
-        return f"{prefix}{hrs:02}:{mins:02}:{sec_str}"
-    
-    if show_plus and mins == 0:
-        return f"{prefix}{sec_str}"
+        time_str = f"{hrs:02}:{mins:02}:{sec_str}"
+    else:
+        time_str = f"{mins:02}:{sec_str}"
+
+    if strip_leading_zero:
+        # Strips exactly one leading zero from the start of the time numbers
+        # but preserves the sign (+/-) and internal zeros.
+        time_str = re.sub(r'^0', '', time_str)
         
-    return f"{prefix}{mins:02}:{sec_str}"
+    return f"{prefix}{time_str}"
 
 def get_best_segment(index):
     if index < 0 or index >= len(split_names):
@@ -198,7 +203,7 @@ def reset_timer():
     split_times = []
 
 def generate_svg():
-    global bg_color, bg_opacity, corner_radius, font_scale, show_ms, current_split_index, start_time, timer_running, split_times, segment_history
+    global bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms, current_split_index, start_time, timer_running, split_times, segment_history
     
     hex_color = bg_color.lstrip('#')
     rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
@@ -235,9 +240,13 @@ def generate_svg():
     seg_decimals = 2 if show_ms else 0
 
     for i, name in enumerate(split_names):
+        # Name always uses standard text color
         color = text_color
         time_str = "--:--"
         delta_str = ""
+        
+        # Color for the specific time values
+        value_color = text_color
         
         prev_total = split_times[i-1] if (i > 0 and len(split_times) >= i) else 0
         history_list = segment_history.get(name, [])
@@ -245,12 +254,10 @@ def generate_svg():
         if i < len(split_times):
             # Completed Split
             actual_seg = split_times[i] - prev_total
-            time_str = format_time(actual_seg, decimal_places=seg_decimals)
+            # Segment time shows full leading zeros
+            time_str = format_time(actual_seg, decimal_places=seg_decimals, strip_leading_zero=False)
             
-            # To avoid +0.0, we find the best time that ISN'T the current one
-            # If this is the only time in history, delta is 0.0 against itself (gold)
             if len(history_list) > 1:
-                # Find best time excluding the very last entry (the one we just added)
                 other_times = history_list[:-1]
                 comparison_best = min(other_times)
             elif len(history_list) == 1:
@@ -260,23 +267,24 @@ def generate_svg():
 
             if comparison_best is not None:
                 delta = actual_seg - comparison_best
-                delta_str = format_time(delta, show_plus=True, decimal_places=1)
-                # Use epsilon for float comparison
-                color = gold_color if actual_seg <= (comparison_best + 0.001) else (green_color if delta < 0 else red_color)
+                # Delta uses the special strip rule
+                delta_str = format_time(delta, show_plus=True, decimal_places=1, strip_leading_zero=True)
+                value_color = gold_color if actual_seg <= (comparison_best + 0.001) else (green_color if delta < 0 else red_color)
 
         elif i == current_split_index:
             # Active Split
-            color = timer_display_color
+            value_color = timer_display_color
             current_seg_run = current_total_elapsed - prev_total
-            time_str = format_time(current_seg_run, decimal_places=seg_decimals)
+            time_str = format_time(current_seg_run, decimal_places=seg_decimals, strip_leading_zero=False)
             
         svg.append(f'<text x="20" y="{y_offset}" fill="{color}" font-family="{font_family}" font-size="{16 * font_scale}">{name}</text>')
         if delta_str:
-            svg.append(f'<text x="310" y="{y_offset}" fill="{color}" font-family="{font_family}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
-        svg.append(f'<text x="380" y="{y_offset}" fill="{color}" font-family="{font_family}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
-        y_offset += 30
+            svg.append(f'<text x="310" y="{y_offset}" fill="{value_color}" font-family="{font_family}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
+        svg.append(f'<text x="380" y="{y_offset}" fill="{value_color}" font-family="{font_family}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
+        y_offset += line_spacing
 
-    svg.append(f'<text x="380" y="{svg_height - 30}" fill="{timer_display_color}" font-family="{font_family}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed)}</text>')
+    # Main timer shows full leading zeros
+    svg.append(f'<text x="380" y="{svg_height - 30}" fill="{timer_display_color}" font-family="{font_family}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed, strip_leading_zero=False)}</text>')
     svg.append('</svg>')
     return "".join(svg)
 
@@ -309,6 +317,7 @@ def script_properties():
     obs.obs_properties_add_int(props, "bg_opacity", "Opacity (%)", 0, 100, 1)
     obs.obs_properties_add_int(props, "corner_radius", "Corner Radius", 0, 100, 1)
     obs.obs_properties_add_float(props, "font_scale", "Font Scale", 0.1, 5.0, 0.1)
+    obs.obs_properties_add_int(props, "line_spacing", "Line Spacing (px)", 10, 100, 1)
     obs.obs_properties_add_bool(props, "show_ms", "Show Milliseconds in Segments")
 
     data = load_splits_data()
@@ -331,7 +340,7 @@ def script_properties():
 
 def script_update(settings):
     global source_name, splits_file_path, input_thread, running
-    global game_name, category_name, bg_color, bg_opacity, corner_radius, font_scale, show_ms
+    global game_name, category_name, bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
     
     source_name = obs.obs_data_get_string(settings, "source")
     splits_file_path = obs.obs_data_get_string(settings, "splits_file")
@@ -342,6 +351,10 @@ def script_update(settings):
     font_scale = obs.obs_data_get_double(settings, "font_scale")
     if font_scale <= 0:
         font_scale = 1.0
+
+    line_spacing = obs.obs_data_get_int(settings, "line_spacing")
+    if line_spacing <= 0:
+        line_spacing = 30
     
     bg_color_int = obs.obs_data_get_int(settings, "bg_color")
     bg_color = "#{:06x}".format(bg_color_int & 0xFFFFFF)
