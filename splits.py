@@ -18,21 +18,19 @@ from select import select
 # Input Configuration
 device_blacklist = ""
 device_filter = ""
-enable_logging = True
+input_code = 167
 
 def log(message, level=None):
-    if not enable_logging and level != obs.LOG_WARNING:
-        return
     if level is None:
         try:
             level = obs.LOG_INFO
         except:
             level = 1 # Fallback to info level
+    
     try:
         obs.script_log(level, f"[Splits] {message}")
     except:
         pass
-    print(f"[Splits] {message}")
 
 log("Splits script loaded", obs.LOG_WARNING)
 
@@ -230,7 +228,7 @@ def get_image_data_uri(path):
 
 def input_monitor():
     global gamepad, timer_running, current_split_index, start_time, last_press_time, running
-    global is_held, reset_triggered, device_blacklist, device_filter, debug_status
+    global is_held, reset_triggered, device_blacklist, device_filter, debug_status, input_code
 
     log("Input monitor thread started", obs.LOG_WARNING)
     debug_status = "Monitor Started"
@@ -246,7 +244,7 @@ def input_monitor():
                     time.sleep(1)
                     continue
 
-                log(f"Searching for controller among {len(all_paths)} devices...", obs.LOG_WARNING)
+                log(f"Searching for controller among {len(all_paths)} devices...")
                 for path in all_paths:
                     try:
                         dev = InputDevice(path)
@@ -255,7 +253,7 @@ def input_monitor():
 
                     # Check blacklist
                     dev_name = dev.name.lower()
-                    log(f"Checking device: {dev.name} ({path})")
+                    # log(f"Checking device: {dev.name} ({path})") # Too spammy even for info
                     if any(term in dev_name for term in blacklist_terms):
                         log(f"Skipping blacklisted device: {dev.name} ({path})")
                         dev.close()
@@ -273,8 +271,8 @@ def input_monitor():
                         caps = dev.capabilities(verbose=False)
                         if ecodes.EV_KEY in caps:
                             key_caps = caps[ecodes.EV_KEY]
-                            # Require BOTH BTN_GAMEPAD and KEY_RECORD (167)
-                            if ecodes.BTN_GAMEPAD in key_caps and 167 in key_caps:
+                            # Require BOTH BTN_GAMEPAD and input_code
+                            if ecodes.BTN_GAMEPAD in key_caps and input_code in key_caps:
                                 is_match = True
                     except Exception as e:
                         log(f"Error checking capabilities for {dev.name}: {e}")
@@ -302,7 +300,7 @@ def input_monitor():
                 if r:
                     debug_status = f"Active: {gamepad.name}"
                     for event in gamepad.read():
-                        if event.type == ecodes.EV_KEY and event.code == 167:
+                        if event.type == ecodes.EV_KEY and event.code == input_code:
                             if event.value == 1:  # Key Down
                                 last_press_time = time.time()
                                 is_held = True
@@ -610,7 +608,7 @@ def script_properties():
 
     obs.obs_properties_add_text(props, "device_blacklist", "Device Blacklist (comma-separated)", obs.OBS_TEXT_DEFAULT)
     obs.obs_properties_add_text(props, "device_filter", "Device Filter (substring)", obs.OBS_TEXT_DEFAULT)
-    obs.obs_properties_add_bool(props, "enable_logging", "Enable Logging")
+    obs.obs_properties_add_int(props, "input_code", "Input Event Code", 0, 1000, 1)
 
     data = load_splits_data()
     if data:
@@ -636,7 +634,7 @@ def script_properties():
 def script_update(settings):
     global source_name, splits_file_path, input_thread, running
     global game_name, category_name, bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
-    global use_dynamic_height, height_setting, normal_font, mono_font, device_blacklist, device_filter, enable_logging
+    global use_dynamic_height, height_setting, normal_font, mono_font, device_blacklist, device_filter, input_code
 
     source_name = obs.obs_data_get_string(settings, "source")
     splits_file_path = obs.obs_data_get_string(settings, "splits_file")
@@ -645,8 +643,8 @@ def script_update(settings):
     show_ms = obs.obs_data_get_bool(settings, "show_ms")
     device_blacklist = obs.obs_data_get_string(settings, "device_blacklist")
     device_filter = obs.obs_data_get_string(settings, "device_filter")
-    enable_logging = obs.obs_data_get_bool(settings, "enable_logging")
-    log(f"Script updated. Blacklist: {device_blacklist}, Filter: {device_filter}, Logging: {enable_logging}")
+    input_code = obs.obs_data_get_int(settings, "input_code")
+    log(f"Script updated. Blacklist: {device_blacklist}, Filter: {device_filter}, Code: {input_code}")
 
     # Update font families from font settings
     n_font_data = obs.obs_data_get_obj(settings, "normal_font_select")
@@ -680,7 +678,7 @@ def script_update(settings):
     load_splits()
 
     if input_thread is None or not input_thread.is_alive():
-        log("Starting input monitor thread...", obs.LOG_WARNING)
+        log("Starting input monitor thread...")
         running = True
         input_thread = threading.Thread(target=input_monitor, daemon=True)
         input_thread.start()
@@ -695,7 +693,7 @@ def script_tick(seconds):
     
     # Ensure input thread is running
     if running and (input_thread is None or not input_thread.is_alive()):
-        log("Input thread not running, starting/restarting...", obs.LOG_WARNING)
+        log("Input thread not running, starting/restarting...")
         input_thread = threading.Thread(target=input_monitor, daemon=True)
         input_thread.start()
 
