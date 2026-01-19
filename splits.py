@@ -184,8 +184,9 @@ def save_run_to_history():
     save_history()
 
 
-def format_time(seconds, show_plus=False, decimal_places=2, strip_leading_zero=False):
-    """Formats seconds into MM:SS.h or HH:MM:SS.h. Optionally strips leading zero."""
+def format_time(seconds, show_plus=False, decimal_places=2, strip_leading_zero=False, delta_format=False):
+    """Formats seconds into MM:SS.h or HH:MM:SS.h. Optionally strips leading zero.
+    If delta_format=True, omits minutes unless time is >= 60s."""
     if seconds == 0 and not show_plus:
         return "--:--"
 
@@ -215,10 +216,12 @@ def format_time(seconds, show_plus=False, decimal_places=2, strip_leading_zero=F
 
     if hrs > 0:
         time_str = f"{hrs:02}:{mins:02}:{sec_str}"
+    elif delta_format and mins < 1:
+        time_str = sec_str
     else:
         time_str = f"{mins:02}:{sec_str}"
 
-    if strip_leading_zero:
+    if strip_leading_zero and not delta_format:
         time_str = re.sub(r'^0', '', time_str)
 
     return f"{prefix}{time_str}"
@@ -525,7 +528,7 @@ def generate_svg():
                 # Currently delta_str was using min(all_times_for_segment) which is Gold.
                 delta = actual_seg - comp_best
                 delta_str = format_time(
-                    delta, show_plus=True, decimal_places=1, strip_leading_zero=True)
+                    delta, show_plus=True, decimal_places=1, delta_format=True)
                 
                 # Colors: 
                 # Gold: actual_seg <= comp_best
@@ -555,7 +558,7 @@ def generate_svg():
             f'<text x="20" y="{y_offset}" fill="{text_color}" font-family="{normal_font}" font-size="{16 * font_scale}">{name}</text>')
         if delta_str:
             svg.append(
-                f'<text x="310" y="{y_offset}" fill="{delta_time_color}" font-family="{mono_font}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
+                f'<text x="290" y="{y_offset}" fill="{delta_time_color}" font-family="{mono_font}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
         svg.append(
             f'<text x="380" y="{y_offset}" fill="{segment_time_color}" font-family="{mono_font}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
         y_offset += line_spacing
@@ -569,9 +572,6 @@ def generate_svg():
     svg.append(f'<text x="20" y="{footer_y - 25}" fill="{text_color}" font-family="{normal_font}" font-size="{12 * font_scale}" opacity="0.7">SoB: <tspan font-family="{mono_font}">{sob_str}</tspan></text>')
     
     svg.append(f'<text x="380" y="{footer_y - 30}" fill="{final_timer_color}" font-family="{mono_font}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed)}</text>')
-    
-    # Debug Status
-    svg.append(f'<text x="20" y="{footer_y - 5}" fill="{text_color}" font-family="{normal_font}" font-size="8" opacity="0.3">{debug_status}</text>')
 
     svg.append('</svg>')
     return "".join(svg)
