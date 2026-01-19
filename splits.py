@@ -110,11 +110,11 @@ def format_time(seconds, show_plus=False, decimal_places=2, strip_leading_zero=F
     secs = seconds % 60
     
     if decimal_places == 1:
-        sec_str = f"{secs:04.1f}" # e.g. 06.1
+        sec_str = f"{secs:04.1f}" 
     elif decimal_places == 0:
         sec_str = f"{int(secs):02d}"
     else:
-        sec_str = f"{secs:05.2f}" # e.g. 08.11
+        sec_str = f"{secs:05.2f}" 
 
     if hrs > 0:
         time_str = f"{hrs:02}:{mins:02}:{sec_str}"
@@ -123,7 +123,6 @@ def format_time(seconds, show_plus=False, decimal_places=2, strip_leading_zero=F
 
     if strip_leading_zero:
         # Strips exactly one leading zero from the start of the time numbers
-        # but preserves the sign (+/-) and internal zeros.
         time_str = re.sub(r'^0', '', time_str)
         
     return f"{prefix}{time_str}"
@@ -240,13 +239,13 @@ def generate_svg():
     seg_decimals = 2 if show_ms else 0
 
     for i, name in enumerate(split_names):
-        # Name always uses standard text color
+        # Name uses standard text color
         color = text_color
         time_str = "--:--"
         delta_str = ""
         
-        # Color for the specific time values
-        value_color = text_color
+        segment_time_color = text_color
+        delta_time_color = text_color
         
         prev_total = split_times[i-1] if (i > 0 and len(split_times) >= i) else 0
         history_list = segment_history.get(name, [])
@@ -254,7 +253,6 @@ def generate_svg():
         if i < len(split_times):
             # Completed Split
             actual_seg = split_times[i] - prev_total
-            # Segment time shows full leading zeros
             time_str = format_time(actual_seg, decimal_places=seg_decimals, strip_leading_zero=False)
             
             if len(history_list) > 1:
@@ -267,23 +265,24 @@ def generate_svg():
 
             if comparison_best is not None:
                 delta = actual_seg - comparison_best
-                # Delta uses the special strip rule
                 delta_str = format_time(delta, show_plus=True, decimal_places=1, strip_leading_zero=True)
-                value_color = gold_color if actual_seg <= (comparison_best + 0.001) else (green_color if delta < 0 else red_color)
+                
+                # Logic: Delta is only green/red. Segment time can be gold/green/red.
+                delta_time_color = green_color if delta < 0 else red_color
+                segment_time_color = gold_color if actual_seg <= (comparison_best + 0.001) else (green_color if delta < 0 else red_color)
 
         elif i == current_split_index:
             # Active Split
-            value_color = timer_display_color
+            segment_time_color = timer_display_color
             current_seg_run = current_total_elapsed - prev_total
             time_str = format_time(current_seg_run, decimal_places=seg_decimals, strip_leading_zero=False)
             
         svg.append(f'<text x="20" y="{y_offset}" fill="{color}" font-family="{font_family}" font-size="{16 * font_scale}">{name}</text>')
         if delta_str:
-            svg.append(f'<text x="310" y="{y_offset}" fill="{value_color}" font-family="{font_family}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
-        svg.append(f'<text x="380" y="{y_offset}" fill="{value_color}" font-family="{font_family}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
+            svg.append(f'<text x="310" y="{y_offset}" fill="{delta_time_color}" font-family="{font_family}" font-size="{13 * font_scale}" text-anchor="end" opacity="0.9">{delta_str}</text>')
+        svg.append(f'<text x="380" y="{y_offset}" fill="{segment_time_color}" font-family="{font_family}" font-size="{16 * font_scale}" text-anchor="end">{time_str}</text>')
         y_offset += line_spacing
 
-    # Main timer shows full leading zeros
     svg.append(f'<text x="380" y="{svg_height - 30}" fill="{timer_display_color}" font-family="{font_family}" font-size="{48 * font_scale}" font-weight="bold" text-anchor="end">{format_time(current_total_elapsed, strip_leading_zero=False)}</text>')
     svg.append('</svg>')
     return "".join(svg)
