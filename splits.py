@@ -35,9 +35,9 @@ show_ms = True
 use_dynamic_height = True
 height_setting = 600
 svg_width = 400
-# User-defined fonts
-normal_font = "Nunito, sans-serif"
-mono_font = "Courier New, Courier, monospace"
+# User-defined fonts (configured via OBS properties)
+normal_font = "Nunito"
+mono_font = "Courier New"
 
 # Timer State
 current_split_index = -1
@@ -309,14 +309,14 @@ def generate_svg():
     y_offset = content_start_y + 110
     seg_decimals = 2 if show_ms else 0
 
-    # Calculate Sum of Best
+    # Calculate Sum of Best (SoB) and Personal Best (PB)
     sob_total = 0
     for name in split_names:
         history_list = segment_history.get(name, [])
         if history_list:
             sob_total += min(history_list)
 
-    # Calculate PB color logic
+    # Color final timer relative to PB (SoB)
     final_timer_color = text_color
     if sob_total > 0:
         final_timer_color = green_color if current_total_elapsed < sob_total else red_color
@@ -364,6 +364,7 @@ def generate_svg():
     pb_str = format_time(sob_total) if sob_total > 0 else "--:--"
     sob_str = format_time(sob_total) if sob_total > 0 else "--:--"
 
+    # Footer rendering
     footer_y = content_start_y + render_height
     svg.append(f'<text x="20" y="{footer_y - 45}" fill="{text_color}" font-family="{normal_font}" font-size="{12 * font_scale}" opacity="0.7">PB: <tspan font-family="{mono_font}">{pb_str}</tspan></text>')
     svg.append(f'<text x="20" y="{footer_y - 25}" fill="{text_color}" font-family="{normal_font}" font-size="{12 * font_scale}" opacity="0.7">SoB: <tspan font-family="{mono_font}">{sob_str}</tspan></text>')
@@ -389,11 +390,12 @@ def update_source():
             obs.obs_data_release(settings)
         except Exception as e:
             print(f"Error updating SVG: {e}")
+        # Fixed error: Correct function is obs_source_release
         obs.obs_source_release(source)
 
 
 def script_description():
-    return "SVG Speedrun Splits Display.\nPress KEY_RECORD to split, hold to reset.\nRequires 'evdev' and installed fonts."
+    return "SVG Speedrun Splits Display.\nPress KEY_RECORD to split, hold to reset.\nRequires 'evdev' and system fonts."
 
 
 def script_properties():
@@ -411,10 +413,10 @@ def script_properties():
     obs.obs_properties_add_int(
         props, "corner_radius", "Corner Radius", 0, 100, 1)
     
-    # Font settings
-    obs.obs_properties_add_text(props, "normal_font", "Normal Font Family", obs.OBS_TEXT_DEFAULT)
-    obs.obs_properties_add_text(props, "mono_font", "Monospace Font Family", obs.OBS_TEXT_DEFAULT)
-    
+    # Font Selection Menus
+    obs.obs_properties_add_font(props, "normal_font_select", "Normal Font")
+    obs.obs_properties_add_font(props, "mono_font_select", "Monospace Font")
+
     obs.obs_properties_add_float(
         props, "font_scale", "Font Scale", 0.1, 5.0, 0.1)
     obs.obs_properties_add_int(
@@ -459,9 +461,16 @@ def script_update(settings):
     category_name = obs.obs_data_get_string(settings, "category_select")
     show_ms = obs.obs_data_get_bool(settings, "show_ms")
 
-    # Update font families from settings
-    normal_font = obs.obs_data_get_string(settings, "normal_font") or "Nunito, sans-serif"
-    mono_font = obs.obs_data_get_string(settings, "mono_font") or "Courier New, Courier, monospace"
+    # Update font families from font settings
+    n_font_data = obs.obs_data_get_obj(settings, "normal_font_select")
+    if n_font_data:
+        normal_font = obs.obs_data_get_string(n_font_data, "face")
+        obs.obs_data_release(n_font_data)
+    
+    m_font_data = obs.obs_data_get_obj(settings, "mono_font_select")
+    if m_font_data:
+        mono_font = obs.obs_data_get_string(m_font_data, "face")
+        obs.obs_data_release(m_font_data)
 
     use_dynamic_height = obs.obs_data_get_bool(settings, "use_dynamic_height")
     height_setting = obs.obs_data_get_int(settings, "height_setting")
