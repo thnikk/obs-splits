@@ -46,6 +46,11 @@ split_times = []
 segment_history = {}  # segment_name: [list of best times]
 timer_running = False
 
+# Comparison Data (Snapshots at start of run)
+comparison_pb_segments = {} # segment_name: pb_time
+comparison_best_segments = {} # segment_name: best_time
+comparison_pb_total = None
+
 # Input State
 input_thread = None
 gamepad = None
@@ -246,9 +251,35 @@ def input_monitor():
 
 def trigger_split():
     global current_split_index, timer_running, start_time, split_times
+    global comparison_pb_segments, comparison_best_segments, comparison_pb_total
     now = time.time()
 
     if not timer_running and current_split_index == -1:
+        # Initialize comparison snapshots
+        comparison_pb_segments = {}
+        comparison_best_segments = {}
+        
+        # Find PB run
+        pb_run = None
+        min_total = None
+        for run_data in segment_history.values():
+            run_total = sum(run_data.values())
+            if min_total is None or run_total < min_total:
+                min_total = run_total
+                pb_run = run_data
+        
+        comparison_pb_total = min_total
+        
+        for i, name in enumerate(split_names):
+            # Best segment ever
+            best_seg = get_best_segment(i)
+            if best_seg is not None:
+                comparison_best_segments[name] = best_seg
+            
+            # PB run segment
+            if pb_run and name in pb_run:
+                comparison_pb_segments[name] = pb_run[name]
+
         start_time = now
         timer_running = True
         current_split_index = 0
@@ -278,6 +309,7 @@ def generate_svg():
     global bg_color, bg_opacity, corner_radius, font_scale, line_spacing, show_ms
     global current_split_index, start_time, timer_running, split_times, segment_history, game_image_path
     global use_dynamic_height, height_setting, svg_width, normal_font, mono_font
+    global comparison_pb_segments, comparison_best_segments, comparison_pb_total
 
     hex_color = bg_color.lstrip('#')
     rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
@@ -339,18 +371,23 @@ def generate_svg():
     y_offset = content_start_y + 110
     seg_decimals = 2 if show_ms else 0
 
-    # Calculate Sum of Best (SoB) and Personal Best (PB)
-    sob_total = 0
-    for name in split_names:
-        best_time = get_best_segment(split_names.index(name))
-        if best_time is not None:
-            sob_total += best_time
+    # Calculate current PB and SoB from snapshots if timer is running, else from current history
+    if timer_running or current_split_index >= 0:
+        pb_total = comparison_pb_total
+        sob_total = sum(comparison_best_segments.values()) if comparison_best_segments else 0
+    else:
+        # Before a run starts, calculate from current history
+        sob_total = 0
+        for i in range(len(split_names)):
+            best_time = get_best_segment(i)
+            if best_time is not None:
+                sob_total += best_time
 
-    pb_total = None
-    for run_data in segment_history.values():
-        run_total = sum(run_data.values())
-        if pb_total is None or run_total < pb_total:
-            pb_total = run_total
+        pb_total = None
+        for run_data in segment_history.values():
+            run_total = sum(run_data.values())
+            if pb_total is None or run_total < pb_total:
+                pb_total = run_total
 
     # Color final timer relative to PB
     final_timer_color = text_color
@@ -364,26 +401,45 @@ def generate_svg():
         delta_time_color = text_color
 
         prev_total = split_times[i - 1] if (i > 0 and len(split_times) >= i) else 0
-        all_times_for_segment = []
-        for run_data in segment_history.values():
-            if name in run_data:
-                all_times_for_segment.append(run_data[name])
 
         if i < len(split_times):
             actual_seg = split_times[i] - prev_total
             time_str = format_time(actual_seg, decimal_places=seg_decimals)
-            if all_times_for_segment:
-                comparison_best = min(all_times_for_segment)
+            
+            # Use snapshots for comparison if available
+            if timer_running or current_split_index >= 0:
+                comp_best = comparison_best_segments.get(name)
+                comp_pb = comparison_pb_segments.get(name)
             else:
-                comparison_best = None
+                comp_best = get_best_segment(i)
+                comp_pb = None # Not used for delta when not running
 
-            if comparison_best is not None:
-                delta = actual_seg - comparison_best
+            if comp_best is not None:
+                # Delta vs PB or Best? Standard is vs PB, but let's stick to what was there or improve.
+                # Currently delta_str was using min(all_times_for_segment) which is Gold.
+                delta = actual_seg - comp_best
                 delta_str = format_time(
                     delta, show_plus=True, decimal_places=1, strip_leading_zero=True)
-                delta_time_color = green_color if delta < 0 else red_color
-                segment_time_color = gold_color if actual_seg <= (
-                    comparison_best + 0.001) else (green_color if delta < 0 else red_color)
+                
+                # Colors: 
+                # Gold: actual_seg <= comp_best
+                # Green: actual_seg < comp_pb (if comp_pb exists)
+                # Red: actual_seg > comp_pb (or > comp_best if no PB)
+                
+                if actual_seg <= comp_best + 0.001:
+                    segment_time_color = gold_color
+                    delta_time_color = gold_color
+                elif comp_pb is not None:
+                    if actual_seg < comp_pb:
+                        segment_time_color = green_color
+                        delta_time_color = green_color
+                    else:
+                        segment_time_color = red_color
+                        delta_time_color = red_color
+                else:
+                    # Fallback if no PB data
+                    delta_time_color = green_color if delta < 0 else red_color
+                    segment_time_color = green_color if delta < 0 else red_color
         elif i == current_split_index:
             segment_time_color = timer_display_color
             time_str = format_time(
