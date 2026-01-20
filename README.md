@@ -2,6 +2,8 @@
 
 A high-performance, customizable speedrun splits plugin for OBS Studio on Linux. This plugin renders splits as an SVG file and monitors controller/keyboard input directly via `evdev` for low-latency splitting.
 
+![screenshot](assets/screenshot.png)
+
 ## Features
 
 - **SVG Rendering:** High-quality, scalable graphics that look great at any size.
