@@ -517,7 +517,7 @@ class SVGRenderer:
                                  self.red_color)
 
         for i, name in enumerate(data.split_names):
-            time_str = "--:--"
+            time_str = ""
             delta_str = ""
             segment_time_color = self.text_color
             delta_time_color = self.text_color
@@ -537,6 +537,7 @@ class SVGRenderer:
 
             if i < len(timer.split_times):
                 actual_seg = timer.split_times[i] - prev_total
+                actual_cumulative = timer.split_times[i]
 
                 # Use snapshots for comparison if available
                 if (timer.timer_running or
@@ -556,21 +557,47 @@ class SVGRenderer:
                     time_str = self._format_time(
                         actual_seg, decimal_places=seg_decimals)
 
-                if comp_best is not None:
-                    delta = actual_seg - comp_best
+                # Calculate cumulative comparison time for delta
+                if self.comparison_type == "sob":
+                    # Sum of best segments up to this point
+                    comp_cumulative_times = [
+                        timer.comparison_best_segments.get(
+                            data.split_names[j])
+                        for j in range(i + 1)
+                    ]
+                    comp_cumulative_times = [t for t in
+                                             comp_cumulative_times if
+                                             t is not None]
+                    comp_cumulative = (sum(comp_cumulative_times) if
+                                       comp_cumulative_times else None)
+                else:
+                    # PB segments up to this point
+                    comp_cumulative_times = [
+                        timer.comparison_pb_segments.get(
+                            data.split_names[j])
+                        for j in range(i + 1)
+                    ]
+                    comp_cumulative_times = [t for t in
+                                             comp_cumulative_times if
+                                             t is not None]
+                    comp_cumulative = (sum(comp_cumulative_times) if
+                                       comp_cumulative_times else None)
+
+                if comp_cumulative is not None:
+                    # Cumulative delta
+                    delta = actual_cumulative - comp_cumulative
                     delta_str = self._format_time(
                         delta, show_plus=True, decimal_places=1,
                         strip_leading_zero=True, delta_format=True)
 
-                    # Delta already happened - it's gold if best
-                    if actual_seg <= comp_best + 0.001:
+                    # Check if this segment was gold
+                    segment_was_gold = (comp_best is not None and
+                                        actual_seg <= comp_best + 0.001)
+
+                    if segment_was_gold:
                         delta_time_color = self.gold_color
-                    elif comp_pb is not None:
-                        if actual_seg < comp_pb:
-                            delta_time_color = self.green_color
-                        else:
-                            delta_time_color = self.red_color
                     else:
+                        # Green if ahead, red if behind
                         delta_time_color = (self.green_color if delta < 0
                                             else self.red_color)
             elif i == timer.current_split_index:
@@ -604,6 +631,9 @@ class SVGRenderer:
                     time_str = self._get_comparison_time(
                         i, data, timer, seg_decimals)
                     segment_time_color = self.text_color
+                else:
+                    # Show 00:00.xx for normal mode when no data
+                    time_str = "00:00.00" if seg_decimals == 2 else "00:00"
 
             svg.append(
                 f'<text x="15" y="{y_offset}" '
@@ -626,9 +656,9 @@ class SVGRenderer:
             y_offset += self.line_spacing
 
         pb_str = (self._format_time(pb_total) if pb_total is not None
-                  and pb_total > 0 else "--:--")
+                  and pb_total > 0 else "00:00.00")
         sob_str = (self._format_time(sob_total) if sob_total > 0
-                   else "--:--")
+                   else "00:00.00")
 
         # Footer
         footer_y = content_start_y + render_height
@@ -667,12 +697,40 @@ class SVGRenderer:
                 for j in range(index + 1)
             ]
             best_times = [t for t in best_times if t is not None]
-            cumulative_best = sum(best_times) if best_times else 0
+            if not best_times:
+                if seg_decimals == 2:
+                    return "00:00.00"
+                elif seg_decimals == 0:
+                    return "00:00"
+                else:
+                    return "00:00.0"
+            cumulative_best = sum(best_times)
             return self._format_time(cumulative_best,
                                      decimal_places=seg_decimals)
         else:
             # Show cumulative PB
-            if timer.comparison_pb_segments:
+            # Before run starts, use current history
+            if not timer.timer_running and timer.current_split_index < 0:
+                # Calculate from current segment_history
+                pb_run = None
+                min_total = None
+                for run_data in data.segment_history.values():
+                    run_total = sum(run_data.values())
+                    if min_total is None or run_total < min_total:
+                        min_total = run_total
+                        pb_run = run_data
+
+                if pb_run:
+                    pb_times = [pb_run.get(data.split_names[j])
+                                for j in range(index + 1)]
+                    pb_times = [t for t in pb_times if t is not None]
+                    if pb_times:
+                        cumulative_pb = sum(pb_times)
+                        return self._format_time(
+                            cumulative_pb,
+                            decimal_places=seg_decimals)
+            elif timer.comparison_pb_segments:
+                # During/after run, use snapshot
                 pb_times = [
                     timer.comparison_pb_segments.get(data.split_names[j])
                     for j in range(index + 1)
@@ -682,14 +740,25 @@ class SVGRenderer:
                     cumulative_pb = sum(pb_times)
                     return self._format_time(cumulative_pb,
                                              decimal_places=seg_decimals)
-            return "--:--"
+
+            if seg_decimals == 2:
+                return "00:00.00"
+            elif seg_decimals == 0:
+                return "00:00"
+            else:
+                return "00:00.0"
 
     @staticmethod
     def _format_time(seconds, show_plus=False, decimal_places=2,
                      strip_leading_zero=False, delta_format=False):
         """Format seconds into MM:SS.h or HH:MM:SS.h."""
         if seconds == 0 and not show_plus:
-            return "--:--"
+            if decimal_places == 1:
+                return "00:00.0"
+            elif decimal_places == 0:
+                return "00:00"
+            else:
+                return "00:00.00"
 
         prefix = ""
         if show_plus:
