@@ -2,7 +2,7 @@
 """
 OBS Plugin for Speedrun Splits.
 Requires: pip install evdev
-Interfaces via KEY_RECORD (167). Single press: Start/Split. Hold: Reset.
+Interfaces via BTN_MODE (316). Single press: Start/Split. Hold: Reset.
 """
 
 import obspython as obs
@@ -253,7 +253,7 @@ class InputMonitor:
         self.gamepad = None
         self.device_blacklist = ""
         self.device_filter = ""
-        self.input_code = 167
+        self.input_code = 316
         self.last_press_time = 0
         self.hold_threshold = 1.0
         self.is_held = False
@@ -889,26 +889,39 @@ def int_to_hex_color(color_int):
 
 
 def script_defaults(settings):
-    obs.obs_data_set_default_int(settings, "input_code", 167)
+    obs.obs_data_set_default_int(settings, "input_code", 316)
+    obs.obs_data_set_default_string(settings, "device_blacklist", "ydotool")
     obs.obs_data_set_default_bool(settings, "show_ms", True)
     obs.obs_data_set_default_bool(settings, "show_best_segment_time",
-                                  False)
+                                  True)
     obs.obs_data_set_default_string(settings, "comparison_type", "pb")
     obs.obs_data_set_default_string(settings, "delta_type", "cumulative")
     obs.obs_data_set_default_bool(settings, "use_dynamic_height", True)
-    obs.obs_data_set_default_int(settings, "height_setting", 600)
-    obs.obs_data_set_default_int(settings, "bg_opacity", 100)
+    obs.obs_data_set_default_int(settings, "height_setting", 800)
+    obs.obs_data_set_default_int(settings, "bg_opacity", 80)
     obs.obs_data_set_default_int(settings, "corner_radius", 10)
+
+    # Set default fonts
+    # normal_font_data = obs.obs_data_create()
+    # obs.obs_data_set_string(normal_font_data, "face", "Nunito Regular")
+    # obs.obs_data_set_default_obj(settings, "normal_font_select", normal_font_data)
+    # obs.obs_data_release(normal_font_data)
+
+    # mono_font_data = obs.obs_data_create()
+    # obs.obs_data_set_string(mono_font_data, "face", "Nunito Regular")
+    # obs.obs_data_set_default_obj(settings, "mono_font_select", mono_font_data)
+    # obs.obs_data_release(mono_font_data)
+
     obs.obs_data_set_default_double(settings, "font_scale", 1.0)
-    obs.obs_data_set_default_int(settings, "line_spacing", 30)
-    obs.obs_data_set_default_int(settings, "bg_color", 1973790)
-    obs.obs_data_set_default_int(settings, "text_color", 16777215)
-    obs.obs_data_set_default_int(settings, "highlight_color", 15729804)
-    obs.obs_data_set_default_int(settings, "gold_color", 4492671)
-    obs.obs_data_set_default_int(settings, "green_color", 4494276)
-    obs.obs_data_set_default_int(settings, "red_color", 4487039)
-    obs.obs_data_set_default_int(settings, "active_segment_bg", 3875715)
-    obs.obs_data_set_default_int(settings, "separator_color", 4473924)
+    obs.obs_data_set_default_int(settings, "line_spacing", 40)
+    obs.obs_data_set_default_int(settings, "bg_color", 2498332)
+    obs.obs_data_set_default_int(settings, "text_color", 15326936)
+    obs.obs_data_set_default_int(settings, "highlight_color", 12689793)
+    obs.obs_data_set_default_int(settings, "gold_color", 9161707)
+    obs.obs_data_set_default_int(settings, "green_color", 9223843)
+    obs.obs_data_set_default_int(settings, "red_color", 6971839)
+    obs.obs_data_set_default_int(settings, "active_segment_bg", 6179907)
+    obs.obs_data_set_default_int(settings, "separator_color", 6968908)
 
 
 def script_description():
@@ -951,7 +964,7 @@ def script_properties():
     obs.obs_properties_add_font(props, "normal_font_select",
                                 "Normal Font")
     obs.obs_properties_add_font(props, "mono_font_select",
-                                "Monospace Font")
+                                 "Time Font")
 
     obs.obs_properties_add_float(
         props, "font_scale", "Font Scale", 0.1, 5.0, 0.1)

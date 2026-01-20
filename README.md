@@ -5,7 +5,7 @@ A high-performance, customizable speedrun splits plugin for OBS Studio on Linux.
 ## Features
 
 - **SVG Rendering:** High-quality, scalable graphics that look great at any size.
-- **Direct Input Monitoring:** Uses `evdev` to listen for hardware events (default: `KEY_RECORD` / 167), bypassing standard OS input focus issues.
+- **Direct Input Monitoring:** Uses `evdev` to listen for hardware events (default: `BTN_MODE` / 316), bypassing standard OS input focus issues.
 - **Dynamic History:** Automatically tracks Personal Bests (PB) and Sum of Best (SoB) segments.
 - **Visual Customization:**
   - Adjustable colors for background, text, highlights, gold segments, and ahead/behind deltas.
@@ -66,7 +66,7 @@ Create a JSON file (e.g., `splits.json`) to define your games and categories:
 4.  The plugin will now write an SVG to `/tmp/obs_splits.svg` and update the Image source automatically.
 
 ### 3. Controls
-- **Split / Start:** Press the configured key (Default: `KEY_RECORD` / 167).
+- **Split / Start:** Press the configured key (Default: `BTN_MODE` / 316).
 - **Reset:** Hold the configured key for 1 second.
 
 ## Customization Options
