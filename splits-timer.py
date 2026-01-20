@@ -15,6 +15,7 @@ import base64
 from evdev import InputDevice, ecodes, list_devices
 from select import select
 from datetime import datetime
+from socket_server import SplitSocketServer
 
 
 class SplitsTimer:
@@ -860,6 +861,9 @@ class SplitsPlugin:
         self.renderer = SVGRenderer()
         self.input_monitor = InputMonitor(self._on_split, self._on_reset)
         self.source_name = ""
+        self.socket_server = None
+        self.socket_enabled = False
+        self.socket_path = "/tmp/obs_splits.sock"
 
     def _on_split(self):
         """Handle split input."""
@@ -874,6 +878,82 @@ class SplitsPlugin:
     def _on_reset(self):
         """Handle reset input."""
         self.timer.reset()
+
+    def _handle_socket_command(self, command):
+        """Handle commands from socket clients."""
+        cmd = command.get("command")
+
+        if cmd == "get_timer_status":
+            if not self.data.split_names:
+                return {"response": "error", "error": "no_data", "message": "No splits data loaded"}
+            return {"response": "timer_status", "running": self.timer.timer_running}
+
+        elif cmd == "get_current_segment":
+            if not self.timer.timer_running:
+                return {"response": "error", "error": "not_running", "message": "Timer not running"}
+
+            current_index = self.timer.current_split_index
+            if current_index < 0 or current_index >= len(self.data.split_names):
+                return {"response": "error", "error": "invalid_segment", "message": "Invalid segment index"}
+
+            segment_name = self.data.split_names[current_index]
+            return {"response": "current_segment", "segment_name": segment_name}
+
+        elif cmd == "split_with_verify":
+            expected_segment = command.get("expected_segment")
+            if not expected_segment:
+                return {"response": "split_result", "success": False, "reason": "missing_segment"}
+
+            if not self.timer.timer_running:
+                return {"response": "split_result", "success": False, "reason": "not_running"}
+
+            current_index = self.timer.current_split_index
+            if current_index < 0 or current_index >= len(self.data.split_names):
+                return {"response": "split_result", "success": False, "reason": "invalid_segment"}
+
+            current_segment = self.data.split_names[current_index]
+            if current_segment != expected_segment:
+                return {
+                    "response": "split_result",
+                    "success": False,
+                    "reason": "segment_mismatch",
+                    "current_segment": current_segment,
+                    "expected_segment": expected_segment
+                }
+
+            # Perform the split
+            is_finished = self.timer.split(self.data.split_names)
+            if is_finished:
+                self.data.save_run(self.timer.split_times)
+
+            return {
+                "response": "split_result",
+                "success": True,
+                "segment_name": current_segment
+            }
+
+        else:
+            return {"response": "error", "error": "unknown_command"}
+
+    def enable_socket_interface(self):
+        """Enable the socket interface."""
+        if not self.socket_enabled:
+            self.socket_server = SplitSocketServer(self.socket_path)
+            if self.socket_server.start(self._handle_socket_command):
+                self.socket_enabled = True
+                self._log("Socket interface enabled")
+            else:
+                self.socket_server = None
+                self._log("Failed to enable socket interface")
+
+    def disable_socket_interface(self):
+        """Disable the socket interface."""
+        if self.socket_enabled:
+            if self.socket_server:
+                self.socket_server.stop()
+                self.socket_server = None
+            self.socket_enabled = False
+            self._log("Socket interface disabled")
 
     def update_source(self):
         """Update the OBS source with new SVG content."""
@@ -917,6 +997,8 @@ def int_to_hex_color(color_int):
 def script_defaults(settings):
     obs.obs_data_set_default_int(settings, "input_code", 316)
     obs.obs_data_set_default_string(settings, "device_blacklist", "ydotool")
+    obs.obs_data_set_default_bool(settings, "enable_socket_interface", False)
+    obs.obs_data_set_default_string(settings, "socket_path", "/tmp/obs_splits.sock")
     obs.obs_data_set_default_bool(settings, "show_ms", True)
     obs.obs_data_set_default_bool(settings, "show_best_segment_time",
                                   True)
@@ -1027,6 +1109,11 @@ def script_properties():
     obs.obs_properties_add_int(
         props, "height_setting", "Height", 100, 2000, 10)
 
+    obs.obs_properties_add_bool(
+        props, "enable_socket_interface", "Enable Socket Interface")
+    obs.obs_properties_add_text(props, "socket_path",
+                                "Socket Path", obs.OBS_TEXT_DEFAULT)
+
     obs.obs_properties_add_text(props, "device_blacklist",
                                 "Device Blacklist (comma-separated)",
                                 obs.OBS_TEXT_DEFAULT)
@@ -1080,6 +1167,21 @@ def script_update(settings):
         settings, "device_filter")
     plugin.input_monitor.input_code = obs.obs_data_get_int(settings,
                                                            "input_code")
+
+    # Handle socket interface
+    socket_enabled = obs.obs_data_get_bool(settings, "enable_socket_interface")
+    socket_path = obs.obs_data_get_string(settings, "socket_path")
+
+    # Update socket path if changed
+    if socket_path != plugin.socket_path:
+        plugin.disable_socket_interface()
+        plugin.socket_path = socket_path
+
+    # Enable/disable socket interface
+    if socket_enabled and not plugin.socket_enabled:
+        plugin.enable_socket_interface()
+    elif not socket_enabled and plugin.socket_enabled:
+        plugin.disable_socket_interface()
 
     # Update font families
     n_font_data = obs.obs_data_get_obj(settings, "normal_font_select")
@@ -1144,3 +1246,4 @@ def script_tick(seconds):
 
 def script_unload():
     plugin.input_monitor.stop()
+    plugin.disable_socket_interface()

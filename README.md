@@ -78,6 +78,56 @@ Create a JSON file (e.g., `splits.json`) to define your games and categories:
 - **Fonts:** Set specific fonts for normal text and monospace timers.
 - **Colors:** Fully themeable interface to match your stream layout.
 
+## Auto-Splitting Integration
+
+The plugin includes a socket interface for external auto-splitting scripts to trigger splits programmatically. This allows for automated splitting based on game state detection.
+
+### Socket Interface Setup
+1. Enable "Socket Interface" in the OBS script properties
+2. Optionally customize the socket path (default: `/tmp/obs_splits.sock`)
+3. Your auto-splitting script can connect to this Unix socket
+
+### Available Commands
+
+#### `get_timer_status`
+Check if the timer is currently running.
+```json
+{"command": "get_timer_status"}
+```
+**Response:**
+```json
+{"response": "timer_status", "running": true}
+```
+
+#### `get_current_segment`
+Get the name of the currently active segment.
+```json
+{"command": "get_current_segment"}
+```
+**Response:**
+```json
+{"response": "current_segment", "segment_name": "Boss Fight"}
+```
+
+#### `split_with_verify`
+Perform a split only if the current segment matches the expected segment.
+```json
+{"command": "split_with_verify", "expected_segment": "Boss Fight"}
+```
+**Success Response:**
+```json
+{"response": "split_result", "success": true, "segment_name": "Boss Fight"}
+```
+**Failure Response:**
+```json
+{"response": "split_result", "success": false, "reason": "segment_mismatch", "current_segment": "Wrong Segment"}
+```
+
+### Example Auto-Splitting Script
+See `auto_split_example.py` for a complete example of how to connect to and use the socket interface.
+
+**Note:** The socket interface is completely optional and doesn't interfere with button-based splitting.
+
 ## Data Storage
 
 - **Splits:** Stored in your provided JSON file.
