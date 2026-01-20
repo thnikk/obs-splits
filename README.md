@@ -89,6 +89,35 @@ The plugin includes a socket interface for external auto-splitting scripts to tr
 
 ### Available Commands
 
+#### `start_run`
+Start a new speedrun timer.
+```json
+{"command": "start_run"}
+```
+**Success Response:**
+```json
+{
+  "response": "run_started",
+  "game": "Game Name",
+  "category": "Any%",
+  "segments": ["First Split", "Second Split", "Final Split"]
+}
+```
+**Error Response:**
+```json
+{"response": "error", "error": "already_running", "message": "Timer is already running"}
+```
+
+#### `reset_run`
+Reset the current speedrun timer.
+```json
+{"command": "reset_run"}
+```
+**Response:**
+```json
+{"response": "run_reset"}
+```
+
 #### `get_timer_status`
 Check if the timer is currently running.
 ```json

@@ -932,6 +932,27 @@ class SplitsPlugin:
                 "segment_name": current_segment
             }
 
+        elif cmd == "start_run":
+            if self.timer.timer_running:
+                return {"response": "error", "error": "already_running", "message": "Timer is already running"}
+
+            if not self.data.split_names:
+                return {"response": "error", "error": "no_splits_loaded", "message": "No splits data loaded"}
+
+            # Start the run
+            self.timer.start(self.data.split_names, self.data.segment_history)
+
+            return {
+                "response": "run_started",
+                "game": self.data.game_name,
+                "category": self.data.category_name,
+                "segments": self.data.split_names
+            }
+
+        elif cmd == "reset_run":
+            self.timer.reset()
+            return {"response": "run_reset"}
+
         else:
             return {"response": "error", "error": "unknown_command"}
 
