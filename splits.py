@@ -413,6 +413,7 @@ class SVGRenderer:
         self.show_ms = True
         self.show_best_segment_time = False
         self.comparison_type = "pb"
+        self.delta_type = "cumulative"
         self.use_dynamic_height = True
         self.height_setting = 600
         self.svg_width = 400
@@ -584,8 +585,12 @@ class SVGRenderer:
                                        comp_cumulative_times else None)
 
                 if comp_cumulative is not None:
-                    # Cumulative delta
-                    delta = actual_cumulative - comp_cumulative
+                    if self.delta_type == "segment" and comp_best is not None:
+                        # Segment delta
+                        delta = actual_seg - comp_best
+                    else:
+                        # Cumulative delta
+                        delta = actual_cumulative - comp_cumulative
                     delta_str = self._format_time(
                         delta, show_plus=True, decimal_places=1,
                         strip_leading_zero=True, delta_format=True)
@@ -594,7 +599,7 @@ class SVGRenderer:
                     segment_was_gold = (comp_best is not None and
                                         actual_seg <= comp_best + 0.001)
 
-                    if segment_was_gold:
+                    if segment_was_gold and self.delta_type == "segment":
                         delta_time_color = self.gold_color
                     else:
                         # Green if ahead, red if behind
@@ -889,6 +894,7 @@ def script_defaults(settings):
     obs.obs_data_set_default_bool(settings, "show_best_segment_time",
                                   False)
     obs.obs_data_set_default_string(settings, "comparison_type", "pb")
+    obs.obs_data_set_default_string(settings, "delta_type", "cumulative")
     obs.obs_data_set_default_bool(settings, "use_dynamic_height", True)
     obs.obs_data_set_default_int(settings, "height_setting", 600)
     obs.obs_data_set_default_int(settings, "bg_opacity", 100)
@@ -965,6 +971,15 @@ def script_properties():
     obs.obs_property_list_add_string(comp_type_list, "Sum of Best",
                                      "sob")
 
+    # Delta type dropdown
+    delta_type_list = obs.obs_properties_add_list(
+        props, "delta_type", "Delta Type",
+        obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+    obs.obs_property_list_add_string(delta_type_list, "Cumulative",
+                                     "cumulative")
+    obs.obs_property_list_add_string(delta_type_list, "Segment",
+                                     "segment")
+
     obs.obs_properties_add_bool(
         props, "use_dynamic_height", "Fit Height to Categories")
     obs.obs_properties_add_int(
@@ -1014,6 +1029,8 @@ def script_update(settings):
         settings, "show_best_segment_time")
     plugin.renderer.comparison_type = obs.obs_data_get_string(
         settings, "comparison_type")
+    plugin.renderer.delta_type = obs.obs_data_get_string(
+        settings, "delta_type")
     plugin.input_monitor.device_blacklist = obs.obs_data_get_string(
         settings, "device_blacklist")
     plugin.input_monitor.device_filter = obs.obs_data_get_string(
