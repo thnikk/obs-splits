@@ -412,6 +412,7 @@ class SVGRenderer:
         self.line_spacing = 30
         self.show_ms = True
         self.show_best_segment_time = False
+        self.show_deltas = True
         self.comparison_type = "pb"
         self.delta_type = "cumulative"
         self.use_dynamic_height = True
@@ -558,62 +559,87 @@ class SVGRenderer:
                     time_str = self._format_time(
                         actual_seg, decimal_places=seg_decimals)
 
-                # Calculate cumulative comparison time for delta
-                if self.comparison_type == "sob":
-                    # Sum of best segments up to this point
-                    comp_cumulative_times = [
-                        timer.comparison_best_segments.get(
-                            data.split_names[j])
-                        for j in range(i + 1)
-                    ]
-                    comp_cumulative_times = [t for t in
-                                             comp_cumulative_times if
-                                             t is not None]
-                    comp_cumulative = (sum(comp_cumulative_times) if
-                                       comp_cumulative_times else None)
-                else:
-                    # PB segments up to this point
-                    comp_cumulative_times = [
-                        timer.comparison_pb_segments.get(
-                            data.split_names[j])
-                        for j in range(i + 1)
-                    ]
-                    comp_cumulative_times = [t for t in
-                                             comp_cumulative_times if
-                                             t is not None]
-                    comp_cumulative = (sum(comp_cumulative_times) if
-                                       comp_cumulative_times else None)
-
-                if comp_cumulative is not None:
-                    if self.delta_type == "segment" and comp_best is not None:
-                        # Segment delta
-                        delta = actual_seg - comp_best
+                if self.show_deltas:
+                    # Calculate cumulative comparison time for delta
+                    if self.comparison_type == "sob":
+                        # Sum of best segments up to this point
+                        comp_cumulative_times = [
+                            timer.comparison_best_segments.get(
+                                data.split_names[j])
+                            for j in range(i + 1)
+                        ]
+                        comp_cumulative_times = [t for t in
+                                                 comp_cumulative_times if
+                                                 t is not None]
+                        comp_cumulative = (sum(comp_cumulative_times) if
+                                           comp_cumulative_times else None)
                     else:
-                        # Cumulative delta
-                        delta = actual_cumulative - comp_cumulative
-                    delta_str = self._format_time(
-                        delta, show_plus=True, decimal_places=1,
-                        strip_leading_zero=True, delta_format=True)
+                        # PB segments up to this point
+                        comp_cumulative_times = [
+                            timer.comparison_pb_segments.get(
+                                data.split_names[j])
+                            for j in range(i + 1)
+                        ]
+                        comp_cumulative_times = [t for t in
+                                                 comp_cumulative_times if
+                                                 t is not None]
+                        comp_cumulative = (sum(comp_cumulative_times) if
+                                           comp_cumulative_times else None)
 
-                    # Check if this segment was gold
-                    segment_was_gold = (comp_best is not None and
-                                        actual_seg <= comp_best + 0.001)
+                    if comp_cumulative is not None:
+                        if self.delta_type == "segment" and comp_best is not None:
+                            # Segment delta
+                            delta = actual_seg - comp_best
+                        else:
+                            # Cumulative delta
+                            delta = actual_cumulative - comp_cumulative
+                        delta_str = self._format_time(
+                            delta, show_plus=True, decimal_places=1,
+                            strip_leading_zero=True, delta_format=True)
 
-                    if segment_was_gold and self.delta_type == "segment":
-                        delta_time_color = self.gold_color
-                    else:
-                        # Green if ahead, red if behind
-                        delta_time_color = (self.green_color if delta < 0
-                                            else self.red_color)
+                        # Check if this segment was gold
+                        segment_was_gold = (comp_best is not None and
+                                            actual_seg <= comp_best + 0.001)
+
+                        if segment_was_gold and self.delta_type == "segment":
+                            delta_time_color = self.gold_color
+                        else:
+                            # Green if ahead, red if behind
+                            delta_time_color = (self.green_color if delta < 0
+                                                else self.red_color)
             elif i == timer.current_split_index:
                 best_seg = timer._get_best_segment(
                     i, data.split_names, data.segment_history)
 
                 # Live Delta Implementation
-                if timer.timer_running and best_seg:
+                if timer.timer_running and self.show_deltas:
                     live_seg_duration = current_total_elapsed - prev_total
-                    live_delta = live_seg_duration - best_seg
-                    if live_delta > -10.0:
+
+                    if self.delta_type == "segment" and best_seg is not None:
+                        # Segment delta
+                        live_delta = live_seg_duration - best_seg
+                    else:
+                        # Cumulative delta
+                        # Calculate cumulative comparison time up to current split
+                        comp_cumulative_times = []
+                        for j in range(i + 1):
+                            if self.comparison_type == "sob":
+                                comp_time = timer.comparison_best_segments.get(
+                                    data.split_names[j])
+                            else:
+                                comp_time = timer.comparison_pb_segments.get(
+                                    data.split_names[j])
+                            if comp_time is not None:
+                                comp_cumulative_times.append(comp_time)
+                        comp_cumulative = (sum(comp_cumulative_times) if
+                                          comp_cumulative_times else None)
+
+                        if comp_cumulative is not None:
+                            live_delta = current_total_elapsed - comp_cumulative
+                        else:
+                            live_delta = None
+
+                    if live_delta is not None and live_delta > -10.0:
                         delta_str = self._format_time(
                             live_delta, show_plus=True, decimal_places=1,
                             strip_leading_zero=True, delta_format=True)
@@ -894,6 +920,7 @@ def script_defaults(settings):
     obs.obs_data_set_default_bool(settings, "show_ms", True)
     obs.obs_data_set_default_bool(settings, "show_best_segment_time",
                                   True)
+    obs.obs_data_set_default_bool(settings, "show_deltas", True)
     obs.obs_data_set_default_string(settings, "comparison_type", "pb")
     obs.obs_data_set_default_string(settings, "delta_type", "cumulative")
     obs.obs_data_set_default_bool(settings, "use_dynamic_height", True)
@@ -974,6 +1001,8 @@ def script_properties():
         props, "show_ms", "Show Milliseconds in Segments")
     obs.obs_properties_add_bool(
         props, "show_best_segment_time", "Comparison Mode")
+    obs.obs_properties_add_bool(
+        props, "show_deltas", "Show Deltas")
 
     # Comparison type dropdown
     comp_type_list = obs.obs_properties_add_list(
@@ -1040,6 +1069,7 @@ def script_update(settings):
     plugin.renderer.show_ms = obs.obs_data_get_bool(settings, "show_ms")
     plugin.renderer.show_best_segment_time = obs.obs_data_get_bool(
         settings, "show_best_segment_time")
+    plugin.renderer.show_deltas = obs.obs_data_get_bool(settings, "show_deltas")
     plugin.renderer.comparison_type = obs.obs_data_get_string(
         settings, "comparison_type")
     plugin.renderer.delta_type = obs.obs_data_get_string(
