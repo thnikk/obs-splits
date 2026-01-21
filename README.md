@@ -138,6 +138,25 @@ Get the name of the currently active segment.
 {"response": "current_segment", "segment_name": "Boss Fight"}
 ```
 
+#### `get_current_game_info`
+Get information about the currently loaded game and category.
+```json
+{"command": "get_current_game_info"}
+```
+**Success Response:**
+```json
+{
+  "response": "current_game_info",
+  "game": "Game Name",
+  "category": "Any%",
+  "segments": ["First Split", "Second Split", "Final Split"]
+}
+```
+**Error Response:**
+```json
+{"response": "error", "error": "no_data", "message": "No splits data loaded"}
+```
+
 #### `split_with_verify`
 Perform a split only if the current segment matches the expected segment.
 ```json

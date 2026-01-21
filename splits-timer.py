@@ -953,6 +953,17 @@ class SplitsPlugin:
             self.timer.reset()
             return {"response": "run_reset"}
 
+        elif cmd == "get_current_game_info":
+            if not self.data.split_names:
+                return {"response": "error", "error": "no_data", "message": "No splits data loaded"}
+
+            return {
+                "response": "current_game_info",
+                "game": self.data.game_name,
+                "category": self.data.category_name,
+                "segments": self.data.split_names
+            }
+
         else:
             return {"response": "error", "error": "unknown_command"}
 
