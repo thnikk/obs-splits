@@ -158,7 +158,7 @@ Get information about the currently loaded game and category.
 ```
 
 #### `split_with_verify`
-Perform a split only if the current segment matches the expected segment.
+Perform a split only if the next segment matches the expected segment. To finish the run on the last segment, use `expected_segment: "end"`.
 ```json
 {"command": "split_with_verify", "expected_segment": "Boss Fight"}
 ```
@@ -166,9 +166,13 @@ Perform a split only if the current segment matches the expected segment.
 ```json
 {"response": "split_result", "success": true, "segment_name": "Boss Fight"}
 ```
+**Finish Run Response (when using "end"):**
+```json
+{"response": "split_result", "success": true, "segment_name": "end"}
+```
 **Failure Response:**
 ```json
-{"response": "split_result", "success": false, "reason": "segment_mismatch", "current_segment": "Wrong Segment"}
+{"response": "split_result", "success": false, "reason": "segment_mismatch", "next_segment": "Wrong Segment", "expected_segment": "Boss Fight"}
 ```
 
 ### Example Auto-Splitting Script

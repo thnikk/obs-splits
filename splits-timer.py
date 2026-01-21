@@ -911,13 +911,29 @@ class SplitsPlugin:
             if current_index < 0 or current_index >= len(self.data.split_names):
                 return {"response": "split_result", "success": False, "reason": "invalid_segment"}
 
-            current_segment = self.data.split_names[current_index]
-            if current_segment != expected_segment:
+            next_index = current_index + 1
+            if next_index >= len(self.data.split_names):
+                # Special case: allow "end" to finish the run
+                if expected_segment == "end":
+                    # Perform the final split
+                    is_finished = self.timer.split(self.data.split_names)
+                    if is_finished:
+                        self.data.save_run(self.timer.split_times)
+                    return {
+                        "response": "split_result",
+                        "success": True,
+                        "segment_name": "end"
+                    }
+                else:
+                    return {"response": "split_result", "success": False, "reason": "no_more_segments"}
+
+            next_segment = self.data.split_names[next_index]
+            if next_segment != expected_segment:
                 return {
                     "response": "split_result",
                     "success": False,
                     "reason": "segment_mismatch",
-                    "current_segment": current_segment,
+                    "next_segment": next_segment,
                     "expected_segment": expected_segment
                 }
 
@@ -929,7 +945,7 @@ class SplitsPlugin:
             return {
                 "response": "split_result",
                 "success": True,
-                "segment_name": current_segment
+                "segment_name": next_segment
             }
 
         elif cmd == "start_run":
